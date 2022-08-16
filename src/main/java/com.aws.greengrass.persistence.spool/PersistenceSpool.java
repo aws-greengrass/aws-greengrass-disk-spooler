@@ -7,10 +7,10 @@ package com.aws.greengrass.persistence.spool;
 
 import com.aws.greengrass.config.Topics;
 import com.aws.greengrass.dependency.ImplementsService;
-import com.aws.greengrass.lifecyclemanager.Kernel;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import com.aws.greengrass.mqttclient.spool.CloudMessageSpool;
 import com.aws.greengrass.lifecyclemanager.PluginService;
+import com.aws.greengrass.util.NucleusPaths;
 
 import javax.inject.Inject;
 import java.util.List;
@@ -24,24 +24,14 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
     private final SpoolStorageDocumentDAO dao;
 
     @Inject
-    public PersistenceSpool(Topics topics, Kernel kernel) {
+    public PersistenceSpool(Topics topics, NucleusPaths paths) {
         super(topics);
-        kernel.parseArgs();
-        dao = new SpoolStorageDocumentDAO(kernel.getNucleusPaths().workPath());
+        dao = new SpoolStorageDocumentDAO(paths.workPath());
     }
 
     @Override
     public boolean isBootstrapRequired(Map<String, Object> newServiceConfig) {
         return true;
-    }
-
-    @Override
-    protected void install() throws InterruptedException {
-        try {
-            super.install();
-        } catch (IllegalArgumentException e) {
-            throw new RuntimeException("Failed to install Persistence Spooler");
-        }
     }
 
     /**
