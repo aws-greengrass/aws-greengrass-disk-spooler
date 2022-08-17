@@ -13,6 +13,8 @@ import com.aws.greengrass.lifecyclemanager.PluginService;
 import com.aws.greengrass.util.NucleusPaths;
 
 import javax.inject.Inject;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -24,9 +26,10 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
     private final SpoolStorageDocumentDAO dao;
 
     @Inject
-    public PersistenceSpool(Topics topics, NucleusPaths paths) {
+    public PersistenceSpool(Topics topics, NucleusPaths paths) throws IOException {
         super(topics);
-        dao = new SpoolStorageDocumentDAO(paths.workPath());
+        Path workPath = paths.workPath(PERSISTENCE_SERVICE_NAME);
+        dao = new SpoolStorageDocumentDAO(workPath);
     }
 
     @Override

@@ -16,11 +16,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Getter(AccessLevel.PACKAGE)
 public class SpoolStorageDocument {
 
-    private final Long messageId;
-    private final Integer retried;
+    private final long messageId;
+    private final int retried;
     private final String messageTopic;
-    private final Integer messageQOS;
-    private final Boolean retain;
+    private final int messageQOS;
+    private final boolean retain;
     private final byte[] messagePayload;
 
     protected SpoolStorageDocument(SpoolMessage message) {
