@@ -21,6 +21,14 @@
         </license>
     </licenses>
 
+    <repositories>
+        <repository>
+            <id>greengrass-common</id>
+            <name>Greengrass common</name>
+            <url>https://d2jrmugq4soldf.cloudfront.net/snapshots</url>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
