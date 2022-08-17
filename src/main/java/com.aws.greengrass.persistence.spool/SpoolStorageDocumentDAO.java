@@ -7,6 +7,7 @@ package com.aws.greengrass.persistence.spool;
 
 import com.aws.greengrass.util.NucleusPaths;
 
+import javax.inject.Inject;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -17,6 +18,7 @@ public class SpoolStorageDocumentDAO {
     private final String url;
     private static final String DATABASE_FORMAT = "jdbc:sqlite:%s/spooler.db";
 
+    @Inject
     public SpoolStorageDocumentDAO(NucleusPaths paths) throws IOException {
         Path workPath = paths.workPath(PERSISTENCE_SERVICE_NAME);
         url = String.format(DATABASE_FORMAT, workPath);
