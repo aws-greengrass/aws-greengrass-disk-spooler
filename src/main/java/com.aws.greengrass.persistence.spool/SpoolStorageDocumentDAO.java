@@ -52,9 +52,9 @@ public class SpoolStorageDocumentDAO {
 
     /**
      * This method will remove a SpoolStorageDocument from the database given its id.
-     * @param messageID the id of the SpoolStorageDocument
+     * @param messageId the id of the SpoolStorageDocument
      */
-    public void removeSpoolStorageDocumentById(Long messageID) {
+    public void removeSpoolStorageDocumentById(Long messageId) {
 
     }
 }
