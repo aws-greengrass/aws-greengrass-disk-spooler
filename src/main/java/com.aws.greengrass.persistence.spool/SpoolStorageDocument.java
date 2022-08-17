@@ -8,12 +8,14 @@ package com.aws.greengrass.persistence.spool;
 import com.aws.greengrass.mqttclient.PublishRequest;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import software.amazon.awssdk.crt.mqtt.QualityOfService;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Getter(AccessLevel.PACKAGE)
+@AllArgsConstructor(access = AccessLevel.PROTECTED)
 public class SpoolStorageDocument {
 
     private final long messageId;
@@ -30,17 +32,6 @@ public class SpoolStorageDocument {
         messageQOS = message.getRequest().getQos().getValue();
         retain = message.getRequest().isRetain();
         messagePayload = message.getRequest().getPayload();
-    }
-
-    protected SpoolStorageDocument(long messageId, int retried, String messageTopic,
-                                int messageQOS, boolean retain, byte[] messagePayload) {
-        this.messageId = messageId;
-        this.retried = retried;
-        this.messageTopic = messageTopic;
-        this.messageQOS = messageQOS;
-        this.retain = retain;
-        this.messagePayload = messagePayload;
-
     }
 
     /**
