@@ -48,18 +48,7 @@ public class SpoolStorageDocumentDAO {
             st = conn.createStatement();
             String query = "SELECT message_id FROM spooler;";
             rs = st.executeQuery(query);
-            //check if rs empty
-            if (!rs.next()) {
-                //if empty we will return null
-                currentIds = null;
-            } else {
-                //if not empty we create return iterable of the contents
-                currentIds = new ArrayList<>();
-                do {
-                    Long id = rs.getLong(1);
-                    currentIds.add(id);
-                } while (rs.next());
-            }
+            currentIds = getIdsFromRs(rs);
         } catch (SQLException | IOException e) {
             throw new RuntimeException(e);
         } finally {
@@ -80,6 +69,23 @@ public class SpoolStorageDocumentDAO {
                     }
                 }
             }
+        }
+        return currentIds;
+    }
+
+    private List<Long> getIdsFromRs(ResultSet rs) throws SQLException {
+        List<Long> currentIds;
+        //check if rs empty
+        if (!rs.next()) {
+            //if empty we will return null
+            currentIds = null;
+        } else {
+            //if not empty we create return iterable of the contents
+            currentIds = new ArrayList<>();
+            do {
+                Long id = rs.getLong(1);
+                currentIds.add(id);
+            } while (rs.next());
         }
         return currentIds;
     }
