@@ -67,7 +67,7 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
     }
 
     @Override
-    public List<Long> getAllSpoolMessageIds() {
+    public Iterable<Long> getAllSpoolMessageIds() {
         return dao.getAllSpoolStorageDocumentIds();
     }
 }
