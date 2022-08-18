@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -40,35 +39,13 @@ public class SpoolStorageDocumentDAO {
      */
     public Iterable<Long> getAllSpoolStorageDocumentIds() {
         List<Long> currentIds;
-        Connection conn = null;
-        ResultSet rs = null;
-        Statement st = null;
-        try {
-            conn = getDbInstance();
-            st = conn.createStatement();
-            String query = "SELECT message_id FROM spooler;";
-            rs = st.executeQuery(query);
+        String query = "SELECT message_id FROM spooler;";
+        try(Connection conn = getDbInstance();
+            Statement st = conn.createStatement();
+            ResultSet rs = st.executeQuery(query)) {
             currentIds = getIdsFromRs(rs);
         } catch (SQLException | IOException e) {
             throw new RuntimeException(e);
-        } finally {
-            try {
-                closeStatement(st);
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
-            } finally {
-                try {
-                    closeResultSet(rs);
-                } catch (SQLException e) {
-                    throw new RuntimeException(e);
-                } finally {
-                    try {
-                        closeConnection(conn);
-                    } catch (SQLException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-            }
         }
         return currentIds;
     }
@@ -124,62 +101,25 @@ public class SpoolStorageDocumentDAO {
     }
 
     private void setUpDatabase() {
-        Connection conn = null;
-        Statement st = null;
+        String tableCreationString = "CREATE TABLE IF NOT EXISTS spooler ("
+                + "message_id INTEGER PRIMARY KEY, "
+                + "retried INTEGER NOT NULL, "
+                + "topic STRING NOT NULL,"
+                + "qos INTEGER NOT NULL,"
+                + "retain BOOLEAN,"
+                + "payload BLOB"
+                + ");";
         try {
-            //check if connection is valid and if table exists
             Class.forName("org.sqlite.JDBC");
-            conn = DriverManager.getConnection(url);
-
-            //create new table if table doesn't exist
-            String tableCreationString = "CREATE TABLE IF NOT EXISTS spooler ("
-                    + "message_id INTEGER PRIMARY KEY, "
-                    + "retried INTEGER NOT NULL, "
-                    + "topic STRING NOT NULL,"
-                    + "qos INTEGER NOT NULL,"
-                    + "retain BOOLEAN,"
-                    + "payload BLOB"
-                    + ");";
-            st = conn.createStatement();
-            st.executeUpdate(tableCreationString);
-        } catch (SQLException | ClassNotFoundException e) {
+        } catch (ClassNotFoundException e) {
             throw new RuntimeException(e);
-        } finally {
-            try {
-                closeStatement(st);
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
-            } finally {
-                try {
-                    closeConnection(conn);
-                } catch (SQLException e) {
-                    throw new RuntimeException(e);
-                }
-            }
         }
-    }
-
-    private void closeConnection(Connection conn) throws SQLException {
-        if (conn != null) {
-            conn.close();
-        }
-    }
-
-    private void closePreparedStatement(PreparedStatement pstmt) throws SQLException {
-        if (pstmt != null) {
-            pstmt.close();
-        }
-    }
-
-    private void closeStatement(Statement st) throws SQLException {
-        if (st != null) {
-            st.close();
-        }
-    }
-
-    private void closeResultSet(ResultSet rs) throws SQLException {
-        if (rs != null) {
-            rs.close();
+        try(Connection conn = getDbInstance();
+            Statement st = conn.createStatement()) {
+            //create new table if table doesn't exist
+            st.executeUpdate(tableCreationString);
+        } catch (SQLException | IOException e) {
+            throw new RuntimeException(e);
         }
     }
 }
