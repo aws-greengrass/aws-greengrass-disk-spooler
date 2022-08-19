@@ -81,7 +81,7 @@ public class PersistenceSpoolIntegrationTest extends BaseITCase {
         ResultSet columns = databaseMetaData.getColumns(null,null, "spooler", null);
 
         assertTrue(columns.next());
-        assertEquals("message_id", ((ResultSet) columns).getString("COLUMN_NAME"));
+        assertEquals("message_id", columns.getString("COLUMN_NAME"));
 
         assertTrue(columns.next());
         assertEquals("retried", columns.getString("COLUMN_NAME"));
