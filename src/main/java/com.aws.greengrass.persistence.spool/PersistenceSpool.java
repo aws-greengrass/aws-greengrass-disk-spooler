@@ -24,7 +24,7 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
     private final SpoolStorageDocumentDAO dao;
 
     @Inject
-    public PersistenceSpool(Topics topics, SpoolStorageDocumentDAO dao) throws IOException {
+    public PersistenceSpool(Topics topics, SpoolStorageDocumentDAO dao) {
         super(topics);
         this.dao = dao;
     }

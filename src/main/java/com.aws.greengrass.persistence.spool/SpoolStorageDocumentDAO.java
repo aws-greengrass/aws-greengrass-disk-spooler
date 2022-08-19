@@ -22,10 +22,14 @@ public class SpoolStorageDocumentDAO {
     protected static final String DATABASE_FILE_NAME = "spooler.db";
 
     @Inject
-    public SpoolStorageDocumentDAO(NucleusPaths paths) throws SQLException, IOException {
+    public SpoolStorageDocumentDAO(NucleusPaths paths) throws IOException {
         Path databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
         url = String.format(DATABASE_FORMAT, databasePath);
-        setUpDatabase();
+        try {
+            setUpDatabase();
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
     }
 
     /**
@@ -91,11 +95,11 @@ public class SpoolStorageDocumentDAO {
      * This method creates a connection instance of the SQLite database.
      * @return Connection for SQLite database instance
      */
-    private Connection getDbInstance() throws SQLException, IOException {
+    private Connection getDbInstance() throws SQLException {
         return DriverManager.getConnection(url);
     }
 
-    private void setUpDatabase() throws SQLException, IOException{
+    private void setUpDatabase() throws SQLException {
         String tableCreationString = "CREATE TABLE IF NOT EXISTS spooler ("
                 + "message_id INTEGER PRIMARY KEY, "
                 + "retried INTEGER NOT NULL, "
