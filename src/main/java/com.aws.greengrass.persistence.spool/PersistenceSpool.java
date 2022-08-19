@@ -13,7 +13,6 @@ import com.aws.greengrass.lifecyclemanager.PluginService;
 
 import javax.inject.Inject;
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
 
 @ImplementsService(name = PersistenceSpool.PERSISTENCE_SERVICE_NAME, autostart = true)

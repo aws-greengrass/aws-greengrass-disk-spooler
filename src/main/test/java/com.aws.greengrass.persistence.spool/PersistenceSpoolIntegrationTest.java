@@ -14,7 +14,11 @@ import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -77,7 +81,7 @@ public class PersistenceSpoolIntegrationTest extends BaseITCase {
         ResultSet columns = databaseMetaData.getColumns(null,null, "spooler", null);
 
         assertTrue(columns.next());
-        assertEquals("message_id", columns.getString("COLUMN_NAME"));
+        assertEquals("message_id", ((ResultSet) columns).getString("COLUMN_NAME"));
 
         assertTrue(columns.next());
         assertEquals("retried", columns.getString("COLUMN_NAME"));
