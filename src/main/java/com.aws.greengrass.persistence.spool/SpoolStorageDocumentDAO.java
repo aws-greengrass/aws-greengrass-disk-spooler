@@ -10,11 +10,7 @@ import com.aws.greengrass.util.NucleusPaths;
 import javax.inject.Inject;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,7 +22,7 @@ public class SpoolStorageDocumentDAO {
     protected static final String DATABASE_FILE_NAME = "spooler.db";
 
     @Inject
-    public SpoolStorageDocumentDAO(NucleusPaths paths) throws IOException {
+    public SpoolStorageDocumentDAO(NucleusPaths paths) throws SQLException, IOException {
         Path databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
         url = String.format(DATABASE_FORMAT, databasePath);
         setUpDatabase();
@@ -37,22 +33,21 @@ public class SpoolStorageDocumentDAO {
      * and return them in order.
      * @return ordered list of the existing ids in the persistent queue
      */
-    public Iterable<Long> getAllSpoolStorageDocumentIds() {
+    public Iterable<Long> getAllSpoolStorageDocumentIds() throws IOException {
         List<Long> currentIds;
         String query = "SELECT message_id FROM spooler;";
         try(Connection conn = getDbInstance();
             Statement st = conn.createStatement();
             ResultSet rs = st.executeQuery(query)) {
             currentIds = getIdsFromRs(rs);
-        } catch (SQLException | IOException e) {
-            throw new RuntimeException(e);
+        } catch (SQLException e) {
+            throw new IOException(e);
         }
         return currentIds;
     }
 
     private List<Long> getIdsFromRs(ResultSet rs) throws SQLException {
         List<Long> currentIds;
-        //check if rs empty
         if (!rs.next()) {
             //if empty we will return null
             currentIds = null;
@@ -100,7 +95,7 @@ public class SpoolStorageDocumentDAO {
         return DriverManager.getConnection(url);
     }
 
-    private void setUpDatabase() {
+    private void setUpDatabase() throws SQLException, IOException{
         String tableCreationString = "CREATE TABLE IF NOT EXISTS spooler ("
                 + "message_id INTEGER PRIMARY KEY, "
                 + "retried INTEGER NOT NULL, "
@@ -109,17 +104,11 @@ public class SpoolStorageDocumentDAO {
                 + "retain BOOLEAN,"
                 + "payload BLOB"
                 + ");";
-        try {
-            Class.forName("org.sqlite.JDBC");
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException(e);
-        }
+        DriverManager.registerDriver(new org.sqlite.JDBC());
         try(Connection conn = getDbInstance();
             Statement st = conn.createStatement()) {
             //create new table if table doesn't exist
             st.executeUpdate(tableCreationString);
-        } catch (SQLException | IOException e) {
-            throw new RuntimeException(e);
         }
     }
 }

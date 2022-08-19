@@ -61,11 +61,11 @@ public class PersistenceSpoolIntegrationTest extends BaseITCase {
 
     @Test
     void GIVEN_persistence_spool_plugin_WHEN_kernel_starts_THEN_database_table_created_correctly()
-            throws ClassNotFoundException, SQLException, IOException {
+            throws SQLException, IOException {
         Path spoolerDatabaseFile = kernel.getNucleusPaths()
                 .workPath(PersistenceSpool.PERSISTENCE_SERVICE_NAME)
                 .resolve(DATABASE_FILE_NAME);
-        Class.forName("org.sqlite.JDBC");
+        DriverManager.registerDriver(new org.sqlite.JDBC());
         Connection conn = DriverManager.getConnection(String.format(DATABASE_FORMAT, spoolerDatabaseFile));
         DatabaseMetaData databaseMetaData = conn.getMetaData();
 
