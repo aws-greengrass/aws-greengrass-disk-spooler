@@ -62,7 +62,7 @@ public class SpoolStorageDocumentDAO {
         } else {
             //if not empty we create return iterable of the contents
             do {
-                Long id = rs.getLong(1);
+                Long id = rs.getLong("message_id");
                 currentIds.add(id);
             } while (rs.next());
         }
