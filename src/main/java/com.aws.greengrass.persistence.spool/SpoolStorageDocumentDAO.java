@@ -10,18 +10,30 @@ import com.aws.greengrass.util.NucleusPaths;
 import javax.inject.Inject;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 
 import static com.aws.greengrass.persistence.spool.PersistenceSpool.PERSISTENCE_SERVICE_NAME;
 
 public class SpoolStorageDocumentDAO {
     private final String url;
-    private static final String DATABASE_FORMAT = "jdbc:sqlite:%s/spooler.db";
+    protected static final String DATABASE_FORMAT = "jdbc:sqlite:%s";
+    protected static final String DATABASE_FILE_NAME = "spooler.db";
 
     @Inject
     public SpoolStorageDocumentDAO(NucleusPaths paths) throws IOException {
-        Path workPath = paths.workPath(PERSISTENCE_SERVICE_NAME);
-        url = String.format(DATABASE_FORMAT, workPath);
+        Path databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
+        url = String.format(DATABASE_FORMAT, databasePath);
+        try {
+            setUpDatabase();
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
     }
 
     /**
@@ -29,8 +41,32 @@ public class SpoolStorageDocumentDAO {
      * and return them in order.
      * @return ordered list of the existing ids in the persistent queue
      */
-    public List<Long> getAllSpoolStorageDocumentIds() {
-        return null;
+    public Iterable<Long> getAllSpoolStorageDocumentIds() throws IOException {
+        List<Long> currentIds;
+        String query = "SELECT message_id FROM spooler;";
+        try(Connection conn = getDbInstance();
+            Statement st = conn.createStatement();
+            ResultSet rs = st.executeQuery(query)) {
+            currentIds = getIdsFromRs(rs);
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
+        return currentIds;
+    }
+
+    private List<Long> getIdsFromRs(ResultSet rs) throws SQLException {
+        List<Long> currentIds = new ArrayList<>();
+        if (!rs.next()) {
+            //return empty list
+            return currentIds;
+        } else {
+            //if not empty we create return iterable of the contents
+            do {
+                Long id = rs.getLong("message_id");
+                currentIds.add(id);
+            } while (rs.next());
+        }
+        return currentIds;
     }
 
     /**
@@ -47,7 +83,6 @@ public class SpoolStorageDocumentDAO {
      * @param document instance of SpoolStorageDocument
      */
     public void insertSpoolStorageDocument(SpoolStorageDocument document) {
-
     }
 
     /**
@@ -55,6 +90,30 @@ public class SpoolStorageDocumentDAO {
      * @param messageId the id of the SpoolStorageDocument
      */
     public void removeSpoolStorageDocumentById(Long messageId) {
+    }
 
+    /**
+     * This method creates a connection instance of the SQLite database.
+     * @return Connection for SQLite database instance
+     */
+    private Connection getDbInstance() throws SQLException {
+        return DriverManager.getConnection(url);
+    }
+
+    private void setUpDatabase() throws SQLException {
+        String tableCreationString = "CREATE TABLE IF NOT EXISTS spooler ("
+                + "message_id INTEGER PRIMARY KEY, "
+                + "retried INTEGER NOT NULL, "
+                + "topic STRING NOT NULL,"
+                + "qos INTEGER NOT NULL,"
+                + "retain BOOLEAN,"
+                + "payload BLOB"
+                + ");";
+        DriverManager.registerDriver(new org.sqlite.JDBC());
+        try(Connection conn = getDbInstance();
+            Statement st = conn.createStatement()) {
+            //create new table if table doesn't exist
+            st.executeUpdate(tableCreationString);
+        }
     }
 }

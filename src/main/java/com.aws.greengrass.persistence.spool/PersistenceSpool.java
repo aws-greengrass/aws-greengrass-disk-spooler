@@ -13,7 +13,6 @@ import com.aws.greengrass.lifecyclemanager.PluginService;
 
 import javax.inject.Inject;
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
 
 @ImplementsService(name = PersistenceSpool.PERSISTENCE_SERVICE_NAME, autostart = true)
@@ -24,7 +23,7 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
     private final SpoolStorageDocumentDAO dao;
 
     @Inject
-    public PersistenceSpool(Topics topics, SpoolStorageDocumentDAO dao) throws IOException {
+    public PersistenceSpool(Topics topics, SpoolStorageDocumentDAO dao) {
         super(topics);
         this.dao = dao;
     }
@@ -67,7 +66,7 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
     }
 
     @Override
-    public List<Long> getAllSpoolMessageIds() {
+    public Iterable<Long> getAllSpoolMessageIds() throws IOException {
         return dao.getAllSpoolStorageDocumentIds();
     }
 }
