@@ -69,7 +69,7 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
         try {
             dao.removeSpoolStorageDocumentById(id);
         } catch (SQLException e) {
-            logger.atError()
+            logger.atWarn()
                     .kv("messageId", id)
                     .cause(e)
                     .log("Failed to delete message by messageId");
@@ -82,7 +82,7 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
      * @param message :
      */
     @Override
-    public void add(long id, SpoolMessage message) {
+    public void add(long id, SpoolMessage message) throws IOException {
         SpoolStorageDocument document = new SpoolStorageDocument(message);
         try {
             dao.insertSpoolStorageDocument(document);
@@ -91,8 +91,7 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
                     .kv("messageId", id)
                     .cause(e)
                     .log("Failed to add message to disk spooler");
-            //is logging alone good enough or should we consider raising this to nucleus?
-            //we can raise to nucleus so that it switches to memory mode perhaps?
+            throw new IOException(e);
         }
     }
 
