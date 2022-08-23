@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -74,22 +75,47 @@ public class SpoolStorageDocumentDAO {
      * @param messageId the id of the SpoolStorageDocument
      * @return SpoolStorageDocument
      */
-    public SpoolStorageDocument getSpoolStorageDocumentById(long messageId) {
-        return null;
+    public SpoolStorageDocument getSpoolStorageDocumentById(long messageId) throws SQLException {
+        String query = "SELECT retried, topic, qos, retain, payload FROM spooler WHERE message_id = ?;";
+        try(Connection conn = getDbInstance();
+            PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setLong(1, messageId);
+            try(ResultSet rs = pstmt.executeQuery()) {
+                return getSpoolStorageDocumentFromRs(messageId, rs);
+            }
+        }
     }
 
     /**
      * This method will insert a SpoolStorageDocument into the database.
      * @param document instance of SpoolStorageDocument
      */
-    public void insertSpoolStorageDocument(SpoolStorageDocument document) {
+    public void insertSpoolStorageDocument(SpoolStorageDocument document) throws SQLException {
+        String sqlString =
+                "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload) VALUES (?,?,?,?,?,?);";
+        try(Connection conn = getDbInstance();
+            PreparedStatement pstmt = conn.prepareStatement(sqlString)) {
+            pstmt.setLong(1, document.getMessageId());
+            pstmt.setInt(2, document.getRetried());
+            pstmt.setString(3, document.getMessageTopic());
+            pstmt.setInt(4, document.getMessageQOS());
+            pstmt.setBoolean(5, document.isRetain());
+            pstmt.setBytes(6, document.getMessagePayload());
+            pstmt.executeUpdate();
+        }
     }
 
     /**
      * This method will remove a SpoolStorageDocument from the database given its id.
      * @param messageId the id of the SpoolStorageDocument
      */
-    public void removeSpoolStorageDocumentById(Long messageId) {
+    public void removeSpoolStorageDocumentById(Long messageId) throws SQLException {
+        String deleteSQL = "DELETE FROM spooler WHERE message_id = ?;";
+        try(Connection conn = getDbInstance();
+            PreparedStatement pstmt = conn.prepareStatement(deleteSQL)) {
+            pstmt.setLong(1, messageId);
+            pstmt.executeUpdate();
+        }
     }
 
     /**
@@ -114,6 +140,19 @@ public class SpoolStorageDocumentDAO {
             Statement st = conn.createStatement()) {
             //create new table if table doesn't exist
             st.executeUpdate(tableCreationString);
+        }
+    }
+
+    private SpoolStorageDocument getSpoolStorageDocumentFromRs(long messageId, ResultSet rs) throws SQLException {
+        if (rs.next()) {
+            int retried = rs.getInt("retried");
+            String topic = rs.getString("topic");
+            int qosNum = rs.getInt("qos");
+            boolean retain = rs.getBoolean("retain");
+            byte[] payload = rs.getBytes("payload");
+            return new SpoolStorageDocument(messageId, retried, topic, qosNum, retain, payload);
+        } else {
+            return null;
         }
     }
 }
