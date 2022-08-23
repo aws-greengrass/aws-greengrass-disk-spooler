@@ -55,13 +55,12 @@ public class SpoolStorageDocumentDAO {
     }
 
     private List<Long> getIdsFromRs(ResultSet rs) throws SQLException {
-        List<Long> currentIds;
+        List<Long> currentIds = new ArrayList<>();
         if (!rs.next()) {
-            //if empty we will return null
-            currentIds = null;
+            //return empty list
+            return currentIds;
         } else {
             //if not empty we create return iterable of the contents
-            currentIds = new ArrayList<>();
             do {
                 Long id = rs.getLong(1);
                 currentIds.add(id);
@@ -84,7 +83,6 @@ public class SpoolStorageDocumentDAO {
      * @param document instance of SpoolStorageDocument
      */
     public void insertSpoolStorageDocument(SpoolStorageDocument document) {
-
     }
 
     /**
@@ -92,7 +90,6 @@ public class SpoolStorageDocumentDAO {
      * @param messageId the id of the SpoolStorageDocument
      */
     public void removeSpoolStorageDocumentById(Long messageId) {
-
     }
 
     /**

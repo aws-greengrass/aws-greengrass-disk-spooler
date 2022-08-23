@@ -104,16 +104,16 @@ public class PersistenceSpoolIntegrationTest extends BaseITCase {
 
     private void startKernelWithConfig() throws InterruptedException {
         kernel = new Kernel();
-        CountDownLatch DiskSpoolerRunning = new CountDownLatch(1);
+        CountDownLatch diskSpoolerRunning = new CountDownLatch(1);
         kernel.parseArgs("-r", rootDir.toAbsolutePath().toString(), "-i",
                 getClass().getResource("config.yaml").toString());
         kernel.getContext().addGlobalStateChangeListener((GreengrassService service, State was, State newState) -> {
             if (service.getName().equals(PersistenceSpool.PERSISTENCE_SERVICE_NAME) && service.getState()
                     .equals(State.RUNNING)) {
-                DiskSpoolerRunning.countDown();
+                diskSpoolerRunning.countDown();
             }
         });
         kernel.launch();
-        assertTrue(DiskSpoolerRunning.await(TEST_TIME_OUT_SEC, TimeUnit.SECONDS));
+        assertTrue(diskSpoolerRunning.await(TEST_TIME_OUT_SEC, TimeUnit.SECONDS));
     }
 }
