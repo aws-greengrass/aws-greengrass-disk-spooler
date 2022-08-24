@@ -87,10 +87,6 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
         try {
             dao.insertSpoolStorageDocument(document);
         } catch (SQLException e) {
-            logger.atError()
-                    .kv("messageId", id)
-                    .cause(e)
-                    .log("Failed to add message to disk spooler");
             throw new IOException(e);
         }
     }
