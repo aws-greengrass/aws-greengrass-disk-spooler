@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.aws.greengrass.persistence.spool;
+package com.aws.greengrass.disk.spool;
 
 import com.aws.greengrass.config.Configuration;
 import com.aws.greengrass.dependency.Context;
@@ -40,7 +40,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.spy;
 
 @ExtendWith({GGExtension.class, MockitoExtension.class})
-public class PersistenceSpoolUnitTest extends BaseITCase {
+public class DiskSpoolUnitTest extends BaseITCase {
     @TempDir
     Path rootDir;
     @Mock
@@ -84,7 +84,7 @@ public class PersistenceSpoolUnitTest extends BaseITCase {
         kernel.parseArgs("-r", rootDir.toAbsolutePath().toString(), "-i",
                 getClass().getResource("config.yaml").toString());
         kernel.getContext().addGlobalStateChangeListener((GreengrassService service, State was, State newState) -> {
-            if (service.getName().equals(PersistenceSpool.PERSISTENCE_SERVICE_NAME) && service.getState()
+            if (service.getName().equals(DiskSpool.PERSISTENCE_SERVICE_NAME) && service.getState()
                     .equals(State.RUNNING)) {
                 diskSpoolerRunning.countDown();
             }

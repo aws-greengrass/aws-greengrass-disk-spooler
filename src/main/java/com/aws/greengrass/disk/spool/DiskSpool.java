@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.aws.greengrass.persistence.spool;
+package com.aws.greengrass.disk.spool;
 
 import com.aws.greengrass.config.Topics;
 import com.aws.greengrass.dependency.ImplementsService;
@@ -18,15 +18,15 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.util.Map;
 
-@ImplementsService(name = PersistenceSpool.PERSISTENCE_SERVICE_NAME, autostart = true)
-public class PersistenceSpool extends PluginService implements CloudMessageSpool {
+@ImplementsService(name = DiskSpool.PERSISTENCE_SERVICE_NAME, autostart = true)
+public class DiskSpool extends PluginService implements CloudMessageSpool {
 
     public static final String PERSISTENCE_SERVICE_NAME = "aws.greengrass.persistence.spooler";
-    private static final Logger logger = LogManager.getLogger(PersistenceSpool.class);
-    private final SpoolStorageDocumentDAO dao;
+    private static final Logger logger = LogManager.getLogger(DiskSpool.class);
+    private final DiskSpoolDAO dao;
 
     @Inject
-    public PersistenceSpool(Topics topics, SpoolStorageDocumentDAO dao) {
+    public DiskSpool(Topics topics, DiskSpoolDAO dao) {
         super(topics);
         this.dao = dao;
     }
@@ -44,11 +44,7 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
     @Override
     public SpoolMessage getMessageById(long id) {
         try {
-            SpoolStorageDocument document = dao.getSpoolStorageDocumentById(id);
-            if (document != null) {
-                return document.getSpoolMessage();
-            }
-            return null;
+            return dao.getSpoolStorageDocumentById(id);
         } catch (SQLException e) {
             logger.atError()
                     .kv("messageId", id)
@@ -61,7 +57,7 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
 
 
     /**
-     * This function takes an id and removes the row in the db with the corrosponding id.
+     * This function takes an id and removes the row in the db with the corresponding id.
      * @param id : id assigned to MQTT message
      */
     @Override
@@ -82,16 +78,15 @@ public class PersistenceSpool extends PluginService implements CloudMessageSpool
      * @param message :
      */
     @Override
-    public void add(long id, SpoolMessage message) throws IOException {
-        SpoolStorageDocument document = new SpoolStorageDocument(message);
+    public void add(long id, SpoolMessage message) {
         try {
-            dao.insertSpoolStorageDocument(document);
+            dao.insertSpoolStorageDocument(message);
         } catch (SQLException e) {
-            throw new IOException(e);
+            // throw new IOException(e);
         }
     }
 
-    @Override
+    // TODO: Uncomment @Override
     public Iterable<Long> getAllSpoolMessageIds() throws IOException {
         return dao.getAllSpoolStorageDocumentIds();
     }
