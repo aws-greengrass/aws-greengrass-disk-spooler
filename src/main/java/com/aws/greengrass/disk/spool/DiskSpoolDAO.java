@@ -24,21 +24,29 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
 
 public class DiskSpoolDAO {
     private final String url;
-    protected static final String DATABASE_FORMAT = "jdbc:sqlite:%s";
+    protected static final String DATABASE_DEFAULT_FORMAT = "jdbc:sqlite:%s";
+    protected static final String DATABASE_WINDOWS_FORMAT = "jdbc:sqlite:C:%s";
     protected static final String DATABASE_FILE_NAME = "spooler.db";
 
     @Inject
     public DiskSpoolDAO(NucleusPaths paths) throws IOException {
         Path databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
-        url = String.format(DATABASE_FORMAT, databasePath);
+        if (Objects.equals(System.getProperty("os.name"), "Windows")) {
+            url = String.format(DATABASE_WINDOWS_FORMAT, databasePath);
+        } else  {
+            url = String.format(DATABASE_DEFAULT_FORMAT, databasePath);
+        }
+
         try {
             setUpDatabase();
         } catch (SQLException e) {
@@ -51,7 +59,7 @@ public class DiskSpoolDAO {
      * and return them in order.
      * @return ordered list of the existing ids in the persistent queue
      */
-    public Iterable<Long> getAllSpoolStorageDocumentIds() throws IOException {
+    public Iterable<Long> getAllSpoolMessageIds() throws IOException {
         List<Long> currentIds;
         String query = "SELECT message_id FROM spooler;";
         try(Connection conn = getDbInstance();
@@ -66,27 +74,20 @@ public class DiskSpoolDAO {
 
     private List<Long> getIdsFromRs(ResultSet rs) throws SQLException {
         List<Long> currentIds = new ArrayList<>();
-        if (!rs.next()) {
-            //return empty list
-            return currentIds;
-        } else {
-            //if not empty we create return iterable of the contents
-            do {
-                Long id = rs.getLong("message_id");
-                currentIds.add(id);
-            } while (rs.next());
+        while(rs.next()) {
+            currentIds.add(rs.getLong("message_id"));
         }
         return currentIds;
     }
 
     /**
-     * This method will query a SpoolStorageDocument and return it given an id.
-     * @param messageId the id of the SpoolStorageDocument
-     * @return SpoolStorageDocument
+     * This method will query a SpoolMessage and return it given an id.
+     * @param messageId the id of the SpoolMessage
+     * @return SpoolMessage
      */
-    public SpoolMessage getSpoolStorageDocumentById(long messageId) throws SQLException {
-        String query = "SELECT retried, topic, qos, retain, payload, userProperties, messagesExpiryIntervalSeconds, "
-                + "corelationData, responseTopic, payloadFormat, contentType FROM spooler WHERE message_id = ?;";
+    public SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
+        String query = "SELECT retried, topic, qos, retain, payload, userProperties, messageExpiryIntervalSeconds, "
+                + "correlationData, responseTopic, payloadFormat, contentType FROM spooler WHERE message_id = ?;";
         try(Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setLong(1, messageId);
@@ -97,38 +98,65 @@ public class DiskSpoolDAO {
     }
 
     /**
-     * This method will insert a SpoolStorageDocument into the database.
-     * @param message instance of SpoolStorageDocument
+     * This method will insert a SpoolMessage into the database.
+     * @param message instance of SpoolMessage
      */
-    public void insertSpoolStorageDocument(SpoolMessage message) throws SQLException {
+    public void insertSpoolMessage(SpoolMessage message) throws SQLException {
         String sqlString =
                 "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload, userProperties, "
-                        + "messagesExpiryIntervalSeconds, corelationData, responseTopic, payloadFormat, contentType) "
+                        + "messageExpiryIntervalSeconds, correlationData, responseTopic, payloadFormat, contentType) "
                         + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?);";
         Publish request = message.getRequest();
         try(Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(sqlString)) {
             pstmt.setLong(1, message.getId());
             pstmt.setInt(2, message.getRetried().get());
+
+            // MQTT 3 & 5 fields
             pstmt.setString(3, request.getTopic());
             pstmt.setInt(4, request.getQos().getValue());
             pstmt.setBoolean(5, request.isRetain());
             pstmt.setBytes(6, request.getPayload());
-            pstmt.setBytes(7, userPropertiesToByteArray(request.getUserProperties()));
-            pstmt.setLong(8, request.getMessageExpiryIntervalSeconds());
-            pstmt.setBytes(9, request.getCorrelationData());
-            pstmt.setString(10, request.getResponseTopic());
-            pstmt.setInt(12, request.getPayloadFormat().getValue());
-            pstmt.setString(13, request.getContentType());
+
+            if (request.getUserProperties() == null) {
+                pstmt.setNull(7, Types.NULL);
+            } else {
+                pstmt.setBytes(7, userPropertiesToByteArray(request.getUserProperties()));
+            }
+            if (request.getMessageExpiryIntervalSeconds() == null) {
+                pstmt.setNull(8, Types.NULL);
+            } else {
+                pstmt.setLong(8, request.getMessageExpiryIntervalSeconds());
+            }
+            if (request.getCorrelationData() == null) {
+                pstmt.setNull(9, Types.NULL);
+            } else {
+                pstmt.setBytes(9, request.getCorrelationData());
+            }
+            if (request.getResponseTopic() == null) {
+                pstmt.setNull(10, Types.NULL);
+            } else {
+                pstmt.setString(10, request.getResponseTopic());
+            }
+            if (request.getPayloadFormat() == null) {
+                pstmt.setNull(11, Types.NULL);
+            } else {
+                pstmt.setInt(11, request.getPayloadFormat().getValue());
+            }
+            if (request.getContentType() == null) {
+                pstmt.setNull(12, Types.NULL);
+            } else {
+                pstmt.setString(12, request.getContentType());
+            }
             pstmt.executeUpdate();
         }
     }
 
     /**
-     * This method will remove a SpoolStorageDocument from the database given its id.
-     * @param messageId the id of the SpoolStorageDocument
+     * This method will remove a SpoolMessage from the database given its id.
+     * @param messageId the id of the SpoolMessage
      */
-    public void removeSpoolStorageDocumentById(Long messageId) throws SQLException {
+    public void removeSpoolMessageById(Long messageId) throws SQLException {
         String deleteSQL = "DELETE FROM spooler WHERE message_id = ?;";
         try(Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(deleteSQL)) {
@@ -192,22 +220,17 @@ public class DiskSpoolDAO {
     }
 
     private byte[] userPropertiesToByteArray(List<UserProperty> userProps) {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ObjectOutputStream oos;
-        try {
-            oos = new ObjectOutputStream(baos);
+        //TODO: userProps will never be NULL here
+        byte[] serialized = new byte[0];
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream(); ObjectOutputStream oos = new ObjectOutputStream(baos)) {
             oos.writeObject(userProps);
             oos.flush();
+            serialized = baos.toByteArray();
         } catch (java.io.IOException e) {
             // TODO: Add logging and exception handling
-        } finally {
-            try {
-                baos.close();
-            } catch (java.io.IOException e) {
-                // TODO: Add logging and exception handling
-            }
         }
-        return baos.toByteArray();
+        // TODO: Figure out a better way to do this. This should never hit
+        return serialized;
     }
 
     private List<UserProperty> byteArrayToUserProperties(byte[] userProperties) {

@@ -12,10 +12,11 @@ import com.aws.greengrass.deployment.DeviceConfiguration;
 import com.aws.greengrass.integrationtests.BaseITCase;
 import com.aws.greengrass.lifecyclemanager.GreengrassService;
 import com.aws.greengrass.lifecyclemanager.Kernel;
-import com.aws.greengrass.mqttclient.PublishRequest;
 import com.aws.greengrass.mqttclient.spool.Spool;
 import com.aws.greengrass.mqttclient.spool.SpoolerStorageType;
 import com.aws.greengrass.mqttclient.spool.SpoolerStoreException;
+import com.aws.greengrass.mqttclient.v5.Publish;
+import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,7 +25,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import software.amazon.awssdk.crt.mqtt.QualityOfService;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -68,7 +68,7 @@ public class DiskSpoolUnitTest extends BaseITCase {
     private void runFirst() throws InterruptedException {
         startKernelWithConfig();
         config.lookup("spooler", GG_SPOOL_MAX_SIZE_IN_BYTES_KEY).withValue(25L);
-        config.lookup("spooler", GG_SPOOL_STORAGE_TYPE_KEY).withValue(String.valueOf(SpoolerStorageType.Plugin));
+        config.lookup("spooler", GG_SPOOL_STORAGE_TYPE_KEY).withValue(String.valueOf(SpoolerStorageType.Disk));
         lenient().when(deviceConfiguration.getSpoolerNamespace()).thenReturn(config.lookupTopics("spooler"));
         spool = spy(new Spool(deviceConfiguration, kernel));
     }
@@ -110,9 +110,9 @@ public class DiskSpoolUnitTest extends BaseITCase {
     void GIVEN_request_with_text_WHEN_add_to_spool_and_extract_THEN_text_should_stay_the_same()
             throws InterruptedException, SpoolerStoreException {
         String message = "Hello";
-        PublishRequest request =
-                PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QualityOfService.AT_LEAST_ONCE).build();
+        Publish request =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.AT_LEAST_ONCE).build();
         long id1 = spool.addMessage(request).getId();
         String result_string =
                 new String (spool.getMessageById(id1).getRequest().getPayload(), StandardCharsets.UTF_8);
@@ -124,8 +124,8 @@ public class DiskSpoolUnitTest extends BaseITCase {
     void GIVEN_id_WHEN_remove_message_by_id_THEN_spooler_message_is_null()
             throws SpoolerStoreException, InterruptedException {
         String message = "Hello";
-        PublishRequest request = PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                .qos(QualityOfService.AT_LEAST_ONCE).build();
+        Publish request = Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                .qos(QOS.AT_LEAST_ONCE).build();
         long id  = spool.addMessage(request).getId();
         assertEquals(1, spool.getCurrentMessageCount());
         spool.popId();
@@ -138,18 +138,18 @@ public class DiskSpoolUnitTest extends BaseITCase {
             throws SpoolerStoreException, InterruptedException {
         String message = "Hello";
 
-        PublishRequest requestAtLeastOnce =
-                PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QualityOfService.AT_LEAST_ONCE).build();
+        Publish requestAtLeastOnce =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.AT_LEAST_ONCE).build();
         long id1 = spool.addMessage(requestAtLeastOnce).getId();
         long id2 = spool.addMessage(requestAtLeastOnce).getId();
-        PublishRequest requestAtMostOnce =
-                PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QualityOfService.AT_MOST_ONCE).build();
+        Publish requestAtMostOnce =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.AT_MOST_ONCE).build();
         long id3 = spool.addMessage(requestAtMostOnce).getId();
-        PublishRequest requestExactlyOnce =
-                PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QualityOfService.EXACTLY_ONCE).build();
+        Publish requestExactlyOnce =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.EXACTLY_ONCE).build();
         long id4 = spool.addMessage(requestExactlyOnce).getId();
         long id5 = spool.addMessage(requestExactlyOnce).getId();
         spool.popOutMessagesWithQosZero();
@@ -165,15 +165,15 @@ public class DiskSpoolUnitTest extends BaseITCase {
     void GIVEN_too_many_requests_WHEN_one_qos_zero_request_responsible_for_overflow_THEN_qos_zero_should_be_removed()
             throws SpoolerStoreException, InterruptedException {
         String message = "Hello";
-        PublishRequest requestAtLeastOnce =
-                PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QualityOfService.AT_LEAST_ONCE).build();
-        PublishRequest requestExactlyOnce =
-                PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QualityOfService.EXACTLY_ONCE).build();
-        PublishRequest requestAtMostOnce =
-                PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QualityOfService.AT_MOST_ONCE).build();
+        Publish requestAtLeastOnce =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.AT_LEAST_ONCE).build();
+        Publish requestExactlyOnce =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.EXACTLY_ONCE).build();
+        Publish requestAtMostOnce =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.AT_MOST_ONCE).build();
         long id1 = spool.addMessage(requestAtLeastOnce).getId();
         long id2 = spool.addMessage(requestExactlyOnce).getId();
         long id3 = spool.addMessage(requestExactlyOnce).getId();
@@ -193,9 +193,9 @@ public class DiskSpoolUnitTest extends BaseITCase {
     void GIVEN_too_many_requests_WHEN_all_qos_not_zero_THEN_exception_thrown()
             throws SpoolerStoreException, InterruptedException {
         String message = "Hello";
-        PublishRequest request =
-                PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QualityOfService.AT_LEAST_ONCE).build();
+        Publish request =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.AT_LEAST_ONCE).build();
         long id1 = spool.addMessage(request).getId();
         long id2 = spool.addMessage(request).getId();
         long id3 = spool.addMessage(request).getId();
@@ -208,9 +208,9 @@ public class DiskSpoolUnitTest extends BaseITCase {
     void GIVEN_requests_added_to_spooler_WHEN_spooler_restarts_THEN_queue_should_persist()
             throws SpoolerStoreException, InterruptedException, IOException {
         String message = "Hello";
-        PublishRequest request =
-                PublishRequest.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QualityOfService.AT_LEAST_ONCE).build();
+        Publish request =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.AT_LEAST_ONCE).build();
         long id1 = spool.addMessage(request).getId();
         long id2 = spool.addMessage(request).getId();
         long id3 = spool.addMessage(request).getId();

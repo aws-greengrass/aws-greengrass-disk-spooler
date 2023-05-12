@@ -21,7 +21,7 @@ import java.util.Map;
 @ImplementsService(name = DiskSpool.PERSISTENCE_SERVICE_NAME, autostart = true)
 public class DiskSpool extends PluginService implements CloudMessageSpool {
 
-    public static final String PERSISTENCE_SERVICE_NAME = "aws.greengrass.persistence.spooler";
+    public static final String PERSISTENCE_SERVICE_NAME = "aws.greengrass.DiskSpooler";
     private static final Logger logger = LogManager.getLogger(DiskSpool.class);
     private final DiskSpoolDAO dao;
 
@@ -44,7 +44,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     @Override
     public SpoolMessage getMessageById(long id) {
         try {
-            return dao.getSpoolStorageDocumentById(id);
+            return dao.getSpoolMessageById(id);
         } catch (SQLException e) {
             logger.atError()
                     .kv("messageId", id)
@@ -63,7 +63,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     @Override
     public void removeMessageById(long id) {
         try {
-            dao.removeSpoolStorageDocumentById(id);
+            dao.removeSpoolMessageById(id);
         } catch (SQLException e) {
             logger.atWarn()
                     .kv("messageId", id)
@@ -80,14 +80,14 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     @Override
     public void add(long id, SpoolMessage message) {
         try {
-            dao.insertSpoolStorageDocument(message);
+            dao.insertSpoolMessage(message);
         } catch (SQLException e) {
             // throw new IOException(e);
         }
     }
 
-    // TODO: Uncomment @Override
-    public Iterable<Long> getAllSpoolMessageIds() throws IOException {
-        return dao.getAllSpoolStorageDocumentIds();
+    @Override
+    public Iterable<Long> getAllMessageIds() throws IOException {
+        return dao.getAllSpoolMessageIds();
     }
 }
