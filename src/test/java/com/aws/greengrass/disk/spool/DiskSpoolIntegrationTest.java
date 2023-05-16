@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.aws.greengrass.persistence.spool;
+package com.aws.greengrass.disk.spool;
 
 import com.aws.greengrass.dependency.State;
 import com.aws.greengrass.integrationtests.BaseITCase;
@@ -30,13 +30,11 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static com.aws.greengrass.persistence.spool.SpoolStorageDocumentDAO.DATABASE_FILE_NAME;
-import static com.aws.greengrass.persistence.spool.SpoolStorageDocumentDAO.DATABASE_FORMAT;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SuppressWarnings("PMD.CloseResource")
 @ExtendWith({GGExtension.class, MockitoExtension.class})
-public class PersistenceSpoolIntegrationTest extends BaseITCase {
+public class DiskSpoolIntegrationTest extends BaseITCase {
     @TempDir
     Path rootDir;
     private static final long TEST_TIME_OUT_SEC = 30L;
@@ -49,8 +47,8 @@ public class PersistenceSpoolIntegrationTest extends BaseITCase {
     void beforeEach() throws InterruptedException, IOException {
         startKernelWithConfig();
         spoolerDatabaseFile = kernel.getNucleusPaths()
-                .workPath(PersistenceSpool.PERSISTENCE_SERVICE_NAME)
-                .resolve(DATABASE_FILE_NAME);
+                .workPath(DiskSpool.PERSISTENCE_SERVICE_NAME)
+                .resolve(DiskSpoolDAO.DATABASE_FILE_NAME);
     }
 
     @AfterEach
@@ -67,10 +65,11 @@ public class PersistenceSpoolIntegrationTest extends BaseITCase {
     void GIVEN_persistence_spool_plugin_WHEN_kernel_starts_THEN_database_table_created_correctly()
             throws SQLException, IOException {
         Path spoolerDatabaseFile = kernel.getNucleusPaths()
-                .workPath(PersistenceSpool.PERSISTENCE_SERVICE_NAME)
-                .resolve(DATABASE_FILE_NAME);
+                .workPath(DiskSpool.PERSISTENCE_SERVICE_NAME)
+                .resolve(DiskSpoolDAO.DATABASE_FILE_NAME);
         DriverManager.registerDriver(new org.sqlite.JDBC());
-        Connection conn = DriverManager.getConnection(String.format(DATABASE_FORMAT, spoolerDatabaseFile));
+        Connection conn = DriverManager.getConnection(String.format(DiskSpoolDAO.DATABASE_DEFAULT_FORMAT,
+                spoolerDatabaseFile));
         DatabaseMetaData databaseMetaData = conn.getMetaData();
 
         //check if table is created correctly
@@ -108,7 +107,7 @@ public class PersistenceSpoolIntegrationTest extends BaseITCase {
         kernel.parseArgs("-r", rootDir.toAbsolutePath().toString(), "-i",
                 getClass().getResource("config.yaml").toString());
         kernel.getContext().addGlobalStateChangeListener((GreengrassService service, State was, State newState) -> {
-            if (service.getName().equals(PersistenceSpool.PERSISTENCE_SERVICE_NAME) && service.getState()
+            if (service.getName().equals(DiskSpool.PERSISTENCE_SERVICE_NAME) && service.getState()
                     .equals(State.RUNNING)) {
                 diskSpoolerRunning.countDown();
             }
