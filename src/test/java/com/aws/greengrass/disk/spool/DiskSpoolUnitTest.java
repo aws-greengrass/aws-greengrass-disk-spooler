@@ -17,6 +17,7 @@ import com.aws.greengrass.mqttclient.spool.SpoolerStorageType;
 import com.aws.greengrass.mqttclient.spool.SpoolerStoreException;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
+import com.aws.greengrass.mqttclient.v5.UserProperty;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +30,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -225,5 +228,32 @@ public class DiskSpoolUnitTest extends BaseITCase {
         assertEquals(id1, popAndRemoveNextId());
         assertEquals(id2, popAndRemoveNextId());
         assertEquals(id3, popAndRemoveNextId());
+    }
+    @Test
+    void GIVEN_request_with_MQTT5_fields_WHEN_add_to_spool_and_extract_THEN_text_should_stay_the_same()
+            throws InterruptedException, SpoolerStoreException {
+        String message = "Hello";
+        UserProperty prop1 = new UserProperty("aaa", "bbb");
+        UserProperty prop2 = new UserProperty("ccc", "ddd");
+        List<UserProperty> props = Arrays.asList(prop1, prop2);
+        Publish request =
+                Publish.builder()
+                        .topic("spool")
+                        .payload(message.getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.AT_LEAST_ONCE)
+                        .retain(false)
+                        .messageExpiryIntervalSeconds(1L)
+                        .payloadFormat(Publish.PayloadFormatIndicator.fromInt(1))
+                        .responseTopic("spool")
+                        .contentType("aaa")
+                        .correlationData("a".getBytes())
+                        .userProperties(props)
+                        .build();
+        long id1 = spool.addMessage(request).getId();
+        Publish response = spool.getMessageById(id1).getRequest();
+        String result_string = new String(response.getPayload(), StandardCharsets.UTF_8);
+        List<UserProperty> result_list = response.getUserProperties();
+        assertEquals(message, result_string);
+        assertEquals(props, result_list);
     }
 }

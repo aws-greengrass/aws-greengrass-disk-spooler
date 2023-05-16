@@ -5,6 +5,7 @@
 
 package com.aws.greengrass.disk.spool;
 
+import com.aws.greengrass.config.PlatformResolver;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
@@ -27,7 +28,6 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
@@ -41,7 +41,7 @@ public class DiskSpoolDAO {
     @Inject
     public DiskSpoolDAO(NucleusPaths paths) throws IOException {
         Path databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
-        if (Objects.equals(System.getProperty("os.name"), "Windows")) {
+        if (PlatformResolver.isWindows) {
             url = String.format(DATABASE_WINDOWS_FORMAT, databasePath);
         } else  {
             url = String.format(DATABASE_DEFAULT_FORMAT, databasePath);
@@ -121,7 +121,11 @@ public class DiskSpoolDAO {
             if (request.getUserProperties() == null) {
                 pstmt.setNull(7, Types.NULL);
             } else {
-                pstmt.setBytes(7, userPropertiesToByteArray(request.getUserProperties()));
+                try {
+                    pstmt.setBytes(7, userPropertiesToByteArray(request.getUserProperties()));
+                } catch (IOException e) {
+                    throw new SQLException(e);
+                }
             }
             if (request.getMessageExpiryIntervalSeconds() == null) {
                 pstmt.setNull(8, Types.NULL);
@@ -219,30 +223,25 @@ public class DiskSpoolDAO {
         }
     }
 
-    private byte[] userPropertiesToByteArray(List<UserProperty> userProps) {
-        //TODO: userProps will never be NULL here
-        byte[] serialized = new byte[0];
+    private byte[] userPropertiesToByteArray(List<UserProperty> userProps) throws IOException {
+        byte[] serialized;
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream(); ObjectOutputStream oos = new ObjectOutputStream(baos)) {
             oos.writeObject(userProps);
             oos.flush();
             serialized = baos.toByteArray();
-        } catch (java.io.IOException e) {
-            // TODO: Add logging and exception handling
         }
-        // TODO: Figure out a better way to do this. This should never hit
         return serialized;
     }
 
     private List<UserProperty> byteArrayToUserProperties(byte[] userProperties) {
-        if (userProperties != null && userProperties.length > 0 ) {
-            try {
-                ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(userProperties));
-                List<UserProperty> temp = (List<UserProperty>) ois.readObject();
-                ois.close();
-                return temp;
-            } catch (java.io.IOException | ClassNotFoundException e) {
-                // TODO: Add logging and exception handling
-            }
+        if (userProperties == null || userProperties.length == 0) {
+            return null;
+        }
+
+        try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(userProperties))) {
+            return (List<UserProperty>) ois.readObject();
+        } catch (IOException | ClassNotFoundException e) {
+            // TODO: Add logging and exception handling
         }
         return null;
     }
