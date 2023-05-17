@@ -11,7 +11,6 @@ import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.mqttclient.v5.UserProperty;
 import com.aws.greengrass.util.NucleusPaths;
 
-import javax.inject.Inject;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -28,6 +27,7 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.inject.Inject;
 
 import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
 
@@ -36,6 +36,11 @@ public class DiskSpoolDAO {
     protected static final String DATABASE_CONNECTION_URL = "jdbc:sqlite:%s";
     protected static final String DATABASE_FILE_NAME = "spooler.db";
 
+    /**
+     * This method will construct the database path.
+     * @param paths The path to the working directory
+     * @throws IOException when fails to set up the database
+     */
     @Inject
     public DiskSpoolDAO(NucleusPaths paths) throws IOException {
         Path databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
@@ -52,11 +57,12 @@ public class DiskSpoolDAO {
      * This method will query the existing database for the existing queue of MQTT request Ids
      * and return them in order.
      * @return ordered list of the existing ids in the persistent queue
+     * @throws IOException when fails to get SpoolMessages by id
      */
     public Iterable<Long> getAllSpoolMessageIds() throws IOException {
         List<Long> currentIds;
         String query = "SELECT message_id FROM spooler;";
-        try(Connection conn = getDbInstance();
+        try (Connection conn = getDbInstance();
             Statement st = conn.createStatement();
             ResultSet rs = st.executeQuery(query)) {
             currentIds = getIdsFromRs(rs);
@@ -68,7 +74,7 @@ public class DiskSpoolDAO {
 
     private List<Long> getIdsFromRs(ResultSet rs) throws SQLException {
         List<Long> currentIds = new ArrayList<>();
-        while(rs.next()) {
+        while (rs.next()) {
             currentIds.add(rs.getLong("message_id"));
         }
         return currentIds;
@@ -78,14 +84,15 @@ public class DiskSpoolDAO {
      * This method will query a SpoolMessage and return it given an id.
      * @param messageId the id of the SpoolMessage
      * @return SpoolMessage
+     * @throws SQLException when fails to get a SpoolMessage by id
      */
     public SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
         String query = "SELECT retried, topic, qos, retain, payload, userProperties, messageExpiryIntervalSeconds, "
                 + "correlationData, responseTopic, payloadFormat, contentType FROM spooler WHERE message_id = ?;";
-        try(Connection conn = getDbInstance();
+        try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setLong(1, messageId);
-            try(ResultSet rs = pstmt.executeQuery()) {
+            try (ResultSet rs = pstmt.executeQuery()) {
                 return getSpoolMessageFromRs(messageId, rs);
             }
         }
@@ -94,6 +101,7 @@ public class DiskSpoolDAO {
     /**
      * This method will insert a SpoolMessage into the database.
      * @param message instance of SpoolMessage
+     * @throws SQLException when fails to insert SpoolMessage in the database
      */
     public void insertSpoolMessage(SpoolMessage message) throws SQLException {
         String sqlString =
@@ -101,7 +109,7 @@ public class DiskSpoolDAO {
                         + "messageExpiryIntervalSeconds, correlationData, responseTopic, payloadFormat, contentType) "
                         + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?);";
         Publish request = message.getRequest();
-        try(Connection conn = getDbInstance();
+        try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(sqlString)) {
             pstmt.setLong(1, message.getId());
             pstmt.setInt(2, message.getRetried().get());
@@ -153,20 +161,17 @@ public class DiskSpoolDAO {
     /**
      * This method will remove a SpoolMessage from the database given its id.
      * @param messageId the id of the SpoolMessage
+     * @throws SQLException when fails to remove a SpoolMessage by id
      */
     public void removeSpoolMessageById(Long messageId) throws SQLException {
         String deleteSQL = "DELETE FROM spooler WHERE message_id = ?;";
-        try(Connection conn = getDbInstance();
+        try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(deleteSQL)) {
             pstmt.setLong(1, messageId);
             pstmt.executeUpdate();
         }
     }
 
-    /**
-     * This method creates a connection instance of the SQLite database.
-     * @return Connection for SQLite database instance
-     */
     private Connection getDbInstance() throws SQLException {
         return DriverManager.getConnection(url);
     }
@@ -187,7 +192,7 @@ public class DiskSpoolDAO {
                 + "contentType STRING"
                 + ");";
         DriverManager.registerDriver(new org.sqlite.JDBC());
-        try(Connection conn = getDbInstance();
+        try (Connection conn = getDbInstance();
             Statement st = conn.createStatement()) {
             //create new table if table doesn't exist
             st.executeUpdate(tableCreationString);
@@ -219,7 +224,8 @@ public class DiskSpoolDAO {
 
     private byte[] userPropertiesToByteArray(List<UserProperty> userProps) throws IOException {
         byte[] serialized;
-        try (ByteArrayOutputStream baos = new ByteArrayOutputStream(); ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             ObjectOutputStream oos = new ObjectOutputStream(baos)) {
             oos.writeObject(userProps);
             oos.flush();
             serialized = baos.toByteArray();
