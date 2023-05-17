@@ -5,7 +5,6 @@
 
 package com.aws.greengrass.disk.spool;
 
-import com.aws.greengrass.config.PlatformResolver;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
