@@ -5,7 +5,6 @@
 
 package com.aws.greengrass.disk.spool;
 
-import com.aws.greengrass.config.PlatformResolver;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
@@ -34,8 +33,7 @@ import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
 
 public class DiskSpoolDAO {
     private final String url;
-    protected static final String DATABASE_DEFAULT_FORMAT = "jdbc:sqlite:%s";
-    protected static final String DATABASE_WINDOWS_FORMAT = "jdbc:sqlite:C:%s";
+    protected static final String DATABASE_CONNECTION_URL = "jdbc:sqlite:%s";
     protected static final String DATABASE_FILE_NAME = "spooler.db";
 
     /**
@@ -46,11 +44,7 @@ public class DiskSpoolDAO {
     @Inject
     public DiskSpoolDAO(NucleusPaths paths) throws IOException {
         Path databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
-        if (PlatformResolver.isWindows) {
-            url = String.format(DATABASE_WINDOWS_FORMAT, databasePath);
-        } else  {
-            url = String.format(DATABASE_DEFAULT_FORMAT, databasePath);
-        }
+        url = String.format(DATABASE_CONNECTION_URL, databasePath);
 
         try {
             setUpDatabase();
