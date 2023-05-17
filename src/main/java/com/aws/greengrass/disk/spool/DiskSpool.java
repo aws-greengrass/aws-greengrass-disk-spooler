@@ -7,9 +7,9 @@ package com.aws.greengrass.disk.spool;
 
 import com.aws.greengrass.config.Topics;
 import com.aws.greengrass.dependency.ImplementsService;
+import com.aws.greengrass.lifecyclemanager.PluginService;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.LogManager;
-import com.aws.greengrass.lifecyclemanager.PluginService;
 import com.aws.greengrass.mqttclient.spool.CloudMessageSpool;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 
