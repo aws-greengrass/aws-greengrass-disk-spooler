@@ -9,14 +9,14 @@ import com.aws.greengrass.config.Topics;
 import com.aws.greengrass.dependency.ImplementsService;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.LogManager;
-import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import com.aws.greengrass.mqttclient.spool.CloudMessageSpool;
 import com.aws.greengrass.lifecyclemanager.PluginService;
+import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 
-import javax.inject.Inject;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.Map;
+import javax.inject.Inject;
 
 @ImplementsService(name = DiskSpool.PERSISTENCE_SERVICE_NAME, autostart = true)
 public class DiskSpool extends PluginService implements CloudMessageSpool {
