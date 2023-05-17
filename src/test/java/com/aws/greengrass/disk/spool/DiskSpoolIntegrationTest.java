@@ -68,7 +68,7 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
                 .workPath(DiskSpool.PERSISTENCE_SERVICE_NAME)
                 .resolve(DiskSpoolDAO.DATABASE_FILE_NAME);
         DriverManager.registerDriver(new org.sqlite.JDBC());
-        Connection conn = DriverManager.getConnection(String.format(DiskSpoolDAO.DATABASE_DEFAULT_FORMAT,
+        Connection conn = DriverManager.getConnection(String.format(DiskSpoolDAO.DATABASE_CONNECTION_URL,
                 spoolerDatabaseFile));
         DatabaseMetaData databaseMetaData = conn.getMetaData();
 
