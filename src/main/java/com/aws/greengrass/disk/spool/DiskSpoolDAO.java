@@ -38,6 +38,11 @@ public class DiskSpoolDAO {
     protected static final String DATABASE_WINDOWS_FORMAT = "jdbc:sqlite:C:%s";
     protected static final String DATABASE_FILE_NAME = "spooler.db";
 
+    /**
+     * This method will construct the database path.
+     * @param paths The path to the working directory
+     * @throws IOException when fails to set up the database
+     */
     @Inject
     public DiskSpoolDAO(NucleusPaths paths) throws IOException {
         Path databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
@@ -58,6 +63,7 @@ public class DiskSpoolDAO {
      * This method will query the existing database for the existing queue of MQTT request Ids
      * and return them in order.
      * @return ordered list of the existing ids in the persistent queue
+     * @throws IOException when fails to get SpoolMessages by id
      */
     public Iterable<Long> getAllSpoolMessageIds() throws IOException {
         List<Long> currentIds;
@@ -84,6 +90,7 @@ public class DiskSpoolDAO {
      * This method will query a SpoolMessage and return it given an id.
      * @param messageId the id of the SpoolMessage
      * @return SpoolMessage
+     * @throws SQLException when fails to get a SpoolMessage by id
      */
     public SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
         String query = "SELECT retried, topic, qos, retain, payload, userProperties, messageExpiryIntervalSeconds, "
@@ -100,6 +107,7 @@ public class DiskSpoolDAO {
     /**
      * This method will insert a SpoolMessage into the database.
      * @param message instance of SpoolMessage
+     * @throws SQLException when fails to insert SpoolMessage in the database
      */
     public void insertSpoolMessage(SpoolMessage message) throws SQLException {
         String sqlString =
@@ -159,6 +167,7 @@ public class DiskSpoolDAO {
     /**
      * This method will remove a SpoolMessage from the database given its id.
      * @param messageId the id of the SpoolMessage
+     * @throws SQLException when fails to remove a SpoolMessage by id
      */
     public void removeSpoolMessageById(Long messageId) throws SQLException {
         String deleteSQL = "DELETE FROM spooler WHERE message_id = ?;";
@@ -169,10 +178,6 @@ public class DiskSpoolDAO {
         }
     }
 
-    /**
-     * This method creates a connection instance of the SQLite database.
-     * @return Connection for SQLite database instance
-     */
     private Connection getDbInstance() throws SQLException {
         return DriverManager.getConnection(url);
     }
