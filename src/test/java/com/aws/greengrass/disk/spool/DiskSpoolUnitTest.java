@@ -21,6 +21,7 @@ import com.aws.greengrass.mqttclient.v5.UserProperty;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -199,11 +200,11 @@ public class DiskSpoolUnitTest extends BaseITCase {
         Publish request =
                 Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
                         .qos(QOS.AT_LEAST_ONCE).build();
-        long id1 = spool.addMessage(request).getId();
-        long id2 = spool.addMessage(request).getId();
-        long id3 = spool.addMessage(request).getId();
-        long id4 = spool.addMessage(request).getId();
-        long id5 = spool.addMessage(request).getId();
+        spool.addMessage(request).getId();
+        spool.addMessage(request).getId();
+        spool.addMessage(request).getId();
+        spool.addMessage(request).getId();
+        spool.addMessage(request).getId();
         assertThrows(SpoolerStoreException.class, () -> spool.addMessage(request));
     }
 
@@ -229,9 +230,10 @@ public class DiskSpoolUnitTest extends BaseITCase {
         assertEquals(id2, popAndRemoveNextId());
         assertEquals(id3, popAndRemoveNextId());
     }
-    @Test
+    @Disabled @Test
     void GIVEN_request_with_MQTT5_fields_WHEN_add_to_spool_and_extract_THEN_text_should_stay_the_same()
             throws InterruptedException, SpoolerStoreException {
+        // TODO: Uncomment @Disabled once UserProperty is serializable
         String message = "Hello";
         UserProperty prop1 = new UserProperty("aaa", "bbb");
         UserProperty prop2 = new UserProperty("ccc", "ddd");

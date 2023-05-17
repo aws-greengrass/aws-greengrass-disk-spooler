@@ -61,7 +61,7 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
         assertTrue(Files.exists(spoolerDatabaseFile));
     }
 
-    @Test
+    @Test @SuppressWarnings("PMD")
     void GIVEN_persistence_spool_plugin_WHEN_kernel_starts_THEN_database_table_created_correctly()
             throws SQLException, IOException {
         Path spoolerDatabaseFile = kernel.getNucleusPaths()
