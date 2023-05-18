@@ -5,6 +5,8 @@
 
 package com.aws.greengrass.disk.spool;
 
+import com.aws.greengrass.logging.api.Logger;
+import com.aws.greengrass.logging.impl.LogManager;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
@@ -22,6 +24,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLTransientException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
@@ -30,11 +33,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.inject.Inject;
 
 import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
+import static java.nio.file.Files.deleteIfExists;
 
 public class DiskSpoolDAO {
     private final String url;
     protected static final String DATABASE_CONNECTION_URL = "jdbc:sqlite:%s";
     protected static final String DATABASE_FILE_NAME = "spooler.db";
+    private final Path databasePath;
+    private static final int MAX_TRY = 3;
+    private static final int SQLITE_CORRUPT_CODE = 11;
+    private static final Logger logger = LogManager.getLogger(DiskSpoolDAO.class);
 
     /**
      * This method will construct the database path.
@@ -43,7 +51,7 @@ public class DiskSpoolDAO {
      */
     @Inject
     public DiskSpoolDAO(NucleusPaths paths) throws IOException {
-        Path databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
+        databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
         url = String.format(DATABASE_CONNECTION_URL, databasePath);
 
         try {
@@ -57,17 +65,18 @@ public class DiskSpoolDAO {
      * This method will query the existing database for the existing queue of MQTT request Ids
      * and return them in order.
      * @return ordered list of the existing ids in the persistent queue
-     * @throws IOException when fails to get SpoolMessages by id
+     * @throws SQLException when fails to get SpoolMessage IDs
      */
-    public Iterable<Long> getAllSpoolMessageIds() throws IOException {
+    public Iterable<Long> getAllSpoolMessageIds() throws SQLException {
         List<Long> currentIds;
         String query = "SELECT message_id FROM spooler;";
         try (Connection conn = getDbInstance();
-            Statement st = conn.createStatement();
-            ResultSet rs = st.executeQuery(query)) {
+             PreparedStatement pstmt = conn.prepareStatement(query);
+             ResultSet rs = executeQueryWithRetries(pstmt)) {
             currentIds = getIdsFromRs(rs);
         } catch (SQLException e) {
-            throw new IOException(e);
+            checkAndHandleCorruption(e);
+            throw e;
         }
         return currentIds;
     }
@@ -92,9 +101,12 @@ public class DiskSpoolDAO {
         try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setLong(1, messageId);
-            try (ResultSet rs = pstmt.executeQuery()) {
+            try (ResultSet rs = executeQueryWithRetries(pstmt)) {
                 return getSpoolMessageFromRs(messageId, rs);
             }
+        } catch (SQLException e) {
+            checkAndHandleCorruption(e);
+            throw e;
         }
     }
 
@@ -103,6 +115,7 @@ public class DiskSpoolDAO {
      * @param message instance of SpoolMessage
      * @throws SQLException when fails to insert SpoolMessage in the database
      */
+    @SuppressWarnings("PMD.ExceptionAsFlowControl")
     public void insertSpoolMessage(SpoolMessage message) throws SQLException {
         String sqlString =
                 "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload, userProperties, "
@@ -154,7 +167,10 @@ public class DiskSpoolDAO {
             } else {
                 pstmt.setString(12, request.getContentType());
             }
-            pstmt.executeUpdate();
+            executeUpdateWithRetries(pstmt);
+        } catch (SQLException e) {
+            checkAndHandleCorruption(e);
+            throw e;
         }
     }
 
@@ -168,11 +184,16 @@ public class DiskSpoolDAO {
         try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(deleteSQL)) {
             pstmt.setLong(1, messageId);
-            pstmt.executeUpdate();
+            executeUpdateWithRetries(pstmt);
         }
     }
 
-    private Connection getDbInstance() throws SQLException {
+    /**
+     * This method creates a connection instance of the SQLite database.
+     * @return Connection for SQLite database instance
+     * @throws SQLException When fails to get Database Connection
+     */
+    public Connection getDbInstance() throws SQLException {
         return DriverManager.getConnection(url);
     }
 
@@ -244,5 +265,46 @@ public class DiskSpoolDAO {
             // TODO: Add logging and exception handling
         }
         return null;
+    }
+
+    private void executeUpdateWithRetries(PreparedStatement statement) throws SQLException {
+        int count = 0;
+        while (true) {
+            try {
+                statement.executeUpdate();
+                break;
+            } catch (SQLTransientException e) {
+                count++;
+                if (count == MAX_TRY) {
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private ResultSet executeQueryWithRetries(PreparedStatement statement) throws SQLException {
+        int count = 0;
+        while (true) {
+            try {
+                return statement.executeQuery();
+            } catch (SQLTransientException e) {
+                count++;
+                if (count == MAX_TRY) {
+                    throw e;
+                }
+            }
+        }
+    }
+
+    void checkAndHandleCorruption(SQLException e) throws SQLException {
+        if (e.getErrorCode() == SQLITE_CORRUPT_CODE) {
+            logger.atWarn().log(String.format("Database %s is corrupted", databasePath));
+            try {
+                deleteIfExists(databasePath);
+            } catch (IOException e2) {
+                throw new SQLException(e2);
+            }
+            setUpDatabase();
+        }
     }
 }
