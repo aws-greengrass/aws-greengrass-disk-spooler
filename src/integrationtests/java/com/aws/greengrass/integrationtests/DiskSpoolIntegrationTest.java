@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,8 +42,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static java.nio.file.Files.deleteIfExists;
 import static org.junit.jupiter.api.Assertions.*;
 
-@SuppressWarnings("PMD.CloseResource")
 @ExtendWith({GGExtension.class, MockitoExtension.class})
+// TODO: Enable after Plugin loading changed in Nucleus
+@Disabled
 public class DiskSpoolIntegrationTest extends BaseITCase {
     @TempDir
     Path rootDir;
@@ -63,7 +65,6 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
         spoolerDatabaseFile = kernel.getNucleusPaths()
                 .workPath(DiskSpool.PERSISTENCE_SERVICE_NAME)
                 .resolve(DATABASE_FILE_NAME);
-        System.out.println("HERE" + spoolerDatabaseFile);
     }
 
     @AfterEach
@@ -192,9 +193,7 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
 
         // Read messages
         String readMessage1 = new String (spooler.getMessageById(0L).getRequest().getPayload(), StandardCharsets.UTF_8);
-        System.out.println(readMessage1);
         String readMessage2 = new String (spooler.getMessageById(1L).getRequest().getPayload(), StandardCharsets.UTF_8);
-        System.out.println(readMessage2);
         String readMessage3 = new String (spooler.getMessageById(2L).getRequest().getPayload(), StandardCharsets.UTF_8);
 
         assertEquals(message1, readMessage1);

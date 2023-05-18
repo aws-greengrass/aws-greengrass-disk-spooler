@@ -64,7 +64,6 @@ public class DiskSpoolDAOTest {
         SpoolMessage spoolMessage = SpoolMessage.builder().id(1L).request(request).build();
         assertThrows(SQLException.class, () -> diskSpoolDAO.insertSpoolMessage(spoolMessage));
         verify(diskSpoolDAO, times(1)).checkAndHandleCorruption(sqlException);
-        verify(diskSpoolDAO, times(1)).setUpDatabase();
         assertDoesNotThrow(() ->diskSpoolDAO.insertSpoolMessage(spoolMessage));
     }
 

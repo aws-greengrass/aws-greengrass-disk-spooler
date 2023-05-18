@@ -5,7 +5,6 @@
 
 package com.aws.greengrass.disk.spool;
 
-import com.aws.greengrass.config.PlatformResolver;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.LogManager;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
@@ -66,12 +65,12 @@ public class DiskSpoolDAO {
      * This method will query the existing database for the existing queue of MQTT request Ids
      * and return them in order.
      * @return ordered list of the existing ids in the persistent queue
-     * @throws IOException when fails to get SpoolMessages by id
+     * @throws SQLException when fails to get SpoolMessage IDs
      */
     public Iterable<Long> getAllSpoolMessageIds() throws SQLException {
         List<Long> currentIds;
         String query = "SELECT message_id FROM spooler;";
-        try(Connection conn = getDbInstance();
+        try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(query);
             ResultSet rs = executeQueryWithRetries(pstmt)) {
             currentIds = getIdsFromRs(rs);
@@ -102,7 +101,7 @@ public class DiskSpoolDAO {
         try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setLong(1, messageId);
-            try(ResultSet rs = executeQueryWithRetries(pstmt)) {
+            try (ResultSet rs = executeQueryWithRetries(pstmt)) {
                 return getSpoolMessageFromRs(messageId, rs);
             }
         } catch (SQLException e) {
@@ -116,6 +115,7 @@ public class DiskSpoolDAO {
      * @param message instance of SpoolMessage
      * @throws SQLException when fails to insert SpoolMessage in the database
      */
+    @SuppressWarnings("PMD.ExceptionAsFlowControl")
     public void insertSpoolMessage(SpoolMessage message) throws SQLException {
         String sqlString =
                 "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload, userProperties, "
@@ -169,7 +169,6 @@ public class DiskSpoolDAO {
             }
             executeUpdateWithRetries(pstmt);
         } catch (SQLException e) {
-            System.out.print("in exception ");
             checkAndHandleCorruption(e);
             throw e;
         }
@@ -192,12 +191,13 @@ public class DiskSpoolDAO {
     /**
      * This method creates a connection instance of the SQLite database.
      * @return Connection for SQLite database instance
+     * @throws SQLException When fails to get Database Connection
      */
     public Connection getDbInstance() throws SQLException {
         return DriverManager.getConnection(url);
     }
 
-    public void setUpDatabase() throws SQLException {
+    private void setUpDatabase() throws SQLException {
         String tableCreationString = "CREATE TABLE IF NOT EXISTS spooler ("
                 + "message_id INTEGER PRIMARY KEY, "
                 + "retried INTEGER NOT NULL, "
@@ -269,12 +269,13 @@ public class DiskSpoolDAO {
 
     private void executeUpdateWithRetries(PreparedStatement statement) throws SQLException {
         int count = 0;
-        while(true) {
+        while (true) {
             try {
                 statement.executeUpdate();
                 break;
             } catch (SQLTransientException e) {
-                if (++count == MAX_TRY) {
+                count++;
+                if (count == MAX_TRY) {
                     throw e;
                 }
             }
@@ -283,11 +284,12 @@ public class DiskSpoolDAO {
 
     private ResultSet executeQueryWithRetries(PreparedStatement statement) throws SQLException {
         int count = 0;
-        while(true) {
+        while (true) {
             try {
                 return statement.executeQuery();
             } catch (SQLTransientException e) {
-                if (++count == MAX_TRY) {
+                count++;
+                if (count == MAX_TRY) {
                     throw e;
                 }
             }
@@ -295,7 +297,6 @@ public class DiskSpoolDAO {
     }
 
     void checkAndHandleCorruption(SQLException e) throws SQLException {
-        System.out.print("In handle corruption");
         if (e.getErrorCode() == SQLITE_CORRUPT_CODE) {
             logger.atWarn().log(String.format("Database %s is corrupted", databasePath));
             try {
