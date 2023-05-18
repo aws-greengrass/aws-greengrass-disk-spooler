@@ -12,6 +12,8 @@ import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.mqttclient.v5.UserProperty;
 import com.aws.greengrass.util.NucleusPaths;
+import com.aws.greengrass.util.RetryUtils;
+import org.sqlite.SQLiteErrorCode;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -27,7 +29,9 @@ import java.sql.SQLException;
 import java.sql.SQLTransientException;
 import java.sql.Statement;
 import java.sql.Types;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.inject.Inject;
@@ -41,8 +45,11 @@ public class DiskSpoolDAO {
     protected static final String DATABASE_FILE_NAME = "spooler.db";
     private final Path databasePath;
     private static final int MAX_TRY = 3;
-    private static final int SQLITE_CORRUPT_CODE = 11;
     private static final Logger logger = LogManager.getLogger(DiskSpoolDAO.class);
+    private final RetryUtils.RetryConfig sqlTransientExceptionRetryConfig =
+            RetryUtils.RetryConfig.builder().initialRetryInterval(Duration.ofSeconds(1L))
+                    .maxRetryInterval(Duration.ofSeconds(3L)).maxAttempt(MAX_TRY)
+                    .retryableExceptions(Collections.singletonList(SQLTransientException.class)).build();
 
     /**
      * This method will construct the database path.
@@ -67,16 +74,20 @@ public class DiskSpoolDAO {
      * @return ordered list of the existing ids in the persistent queue
      * @throws SQLException when fails to get SpoolMessage IDs
      */
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public Iterable<Long> getAllSpoolMessageIds() throws SQLException {
         List<Long> currentIds;
         String query = "SELECT message_id FROM spooler;";
         try (Connection conn = getDbInstance();
              PreparedStatement pstmt = conn.prepareStatement(query);
-             ResultSet rs = executeQueryWithRetries(pstmt)) {
+             ResultSet rs = RetryUtils.runWithRetry(sqlTransientExceptionRetryConfig, pstmt::executeQuery,
+                     "Execute SQL query", logger)) {
             currentIds = getIdsFromRs(rs);
         } catch (SQLException e) {
             checkAndHandleCorruption(e);
             throw e;
+        } catch (Exception e) {
+            throw new SQLException("Failed to get Spool Message IDs", e);
         }
         return currentIds;
     }
@@ -95,18 +106,22 @@ public class DiskSpoolDAO {
      * @return SpoolMessage
      * @throws SQLException when fails to get a SpoolMessage by id
      */
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
         String query = "SELECT retried, topic, qos, retain, payload, userProperties, messageExpiryIntervalSeconds, "
                 + "correlationData, responseTopic, payloadFormat, contentType FROM spooler WHERE message_id = ?;";
         try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setLong(1, messageId);
-            try (ResultSet rs = executeQueryWithRetries(pstmt)) {
+            try (ResultSet rs = RetryUtils.runWithRetry(sqlTransientExceptionRetryConfig, pstmt::executeQuery,
+                    "Execute SQL query", logger)) {
                 return getSpoolMessageFromRs(messageId, rs);
             }
         } catch (SQLException e) {
             checkAndHandleCorruption(e);
             throw e;
+        } catch (Exception e) {
+            throw new SQLException(e);
         }
     }
 
@@ -115,7 +130,7 @@ public class DiskSpoolDAO {
      * @param message instance of SpoolMessage
      * @throws SQLException when fails to insert SpoolMessage in the database
      */
-    @SuppressWarnings("PMD.ExceptionAsFlowControl")
+    @SuppressWarnings({"PMD.ExceptionAsFlowControl", "PMD.AvoidCatchingGenericException"})
     public void insertSpoolMessage(SpoolMessage message) throws SQLException {
         String sqlString =
                 "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload, userProperties, "
@@ -167,10 +182,13 @@ public class DiskSpoolDAO {
             } else {
                 pstmt.setString(12, request.getContentType());
             }
-            executeUpdateWithRetries(pstmt);
+            RetryUtils.runWithRetry(sqlTransientExceptionRetryConfig, pstmt::executeUpdate,
+                    "Execute SQL update", logger);
         } catch (SQLException e) {
             checkAndHandleCorruption(e);
             throw e;
+        } catch (Exception e) {
+            throw new SQLException(e);
         }
     }
 
@@ -179,12 +197,16 @@ public class DiskSpoolDAO {
      * @param messageId the id of the SpoolMessage
      * @throws SQLException when fails to remove a SpoolMessage by id
      */
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public void removeSpoolMessageById(Long messageId) throws SQLException {
         String deleteSQL = "DELETE FROM spooler WHERE message_id = ?;";
         try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(deleteSQL)) {
             pstmt.setLong(1, messageId);
-            executeUpdateWithRetries(pstmt);
+            RetryUtils.runWithRetry(sqlTransientExceptionRetryConfig, pstmt::executeUpdate,
+                    "Execute SQL query", logger);
+        } catch (Exception e) {
+            throw new SQLException(e);
         }
     }
 
@@ -267,38 +289,9 @@ public class DiskSpoolDAO {
         return null;
     }
 
-    private void executeUpdateWithRetries(PreparedStatement statement) throws SQLException {
-        int count = 0;
-        while (true) {
-            try {
-                statement.executeUpdate();
-                break;
-            } catch (SQLTransientException e) {
-                count++;
-                if (count == MAX_TRY) {
-                    throw e;
-                }
-            }
-        }
-    }
-
-    private ResultSet executeQueryWithRetries(PreparedStatement statement) throws SQLException {
-        int count = 0;
-        while (true) {
-            try {
-                return statement.executeQuery();
-            } catch (SQLTransientException e) {
-                count++;
-                if (count == MAX_TRY) {
-                    throw e;
-                }
-            }
-        }
-    }
-
-    void checkAndHandleCorruption(SQLException e) throws SQLException {
-        if (e.getErrorCode() == SQLITE_CORRUPT_CODE) {
-            logger.atWarn().log(String.format("Database %s is corrupted", databasePath));
+    synchronized void checkAndHandleCorruption(SQLException e) throws SQLException {
+        if (e.getErrorCode() == SQLiteErrorCode.SQLITE_CORRUPT.code) {
+            logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
             try {
                 deleteIfExists(databasePath);
             } catch (IOException e2) {

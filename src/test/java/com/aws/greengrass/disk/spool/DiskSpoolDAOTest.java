@@ -74,7 +74,9 @@ public class DiskSpoolDAOTest {
         lenient().when(paths.workPath(anyString())).thenReturn(currDir);
         lenient().when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
         lenient().when(connection.createStatement()).thenReturn(statement);
+        // Fail the first two times to check retry behavior
         lenient().when(preparedStatement.executeUpdate())
+                .thenThrow(sqlException)
                 .thenThrow(sqlException)
                 .thenReturn(0);
         lenient().when(statement.executeUpdate(anyString())).thenReturn(0);
