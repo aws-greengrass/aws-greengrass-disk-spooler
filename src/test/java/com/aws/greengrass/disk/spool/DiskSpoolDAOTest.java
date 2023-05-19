@@ -3,9 +3,11 @@ package com.aws.greengrass.disk.spool;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
+import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import com.aws.greengrass.util.NucleusPaths;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -19,6 +21,7 @@ import java.sql.SQLException;
 import java.sql.SQLTransientException;
 import java.sql.Statement;
 
+import static com.aws.greengrass.testcommons.testutilities.ExceptionLogProtector.ignoreExceptionOfType;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -27,7 +30,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({GGExtension.class, MockitoExtension.class})
 public class DiskSpoolDAOTest {
     @Mock
     private PreparedStatement preparedStatement;
@@ -68,8 +71,9 @@ public class DiskSpoolDAOTest {
     }
 
     @Test
-    void GIVEN_request_with_text_WHEN_operation_to_spool_fail_and_transient_error_THEN_should_retry()
+    void GIVEN_request_with_text_WHEN_operation_to_spool_fail_and_transient_error_THEN_should_retry(ExtensionContext context)
             throws SQLException, IOException {
+        ignoreExceptionOfType(context, SQLTransientException.class);
         SQLException sqlException = new SQLTransientException("Some Transient Error");
         lenient().when(paths.workPath(anyString())).thenReturn(currDir);
         lenient().when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);

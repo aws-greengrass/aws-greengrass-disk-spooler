@@ -87,36 +87,34 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
     void GIVEN_disk_spool_plugin_WHEN_kernel_starts_THEN_database_table_created_correctly()
             throws SQLException {
         DriverManager.registerDriver(new org.sqlite.JDBC());
-        Connection conn = DriverManager.getConnection(String.format(DATABASE_FORMAT, spoolerDatabaseFile));
-        DatabaseMetaData databaseMetaData = conn.getMetaData();
+        try(Connection conn = DriverManager.getConnection(String.format(DATABASE_FORMAT, spoolerDatabaseFile))) {
+            DatabaseMetaData databaseMetaData = conn.getMetaData();
 
-        //check if table is created correctly
-        ResultSet tables = databaseMetaData.getTables(null, null, null, new String[]{"TABLE"});
-        assertTrue(tables.next());
-        assertEquals("spooler", tables.getString("TABLE_NAME"));
-        tables.close();
-        ResultSet columns = databaseMetaData.getColumns(null,null, "spooler", null);
+            //check if table is created correctly
+            try (ResultSet tables = databaseMetaData.getTables(null, null, null, new String[]{"TABLE"})) {
+                assertTrue(tables.next());
+                assertEquals("spooler", tables.getString("TABLE_NAME"));
+            }
+            try (ResultSet columns = databaseMetaData.getColumns(null, null, "spooler", null)) {
+                assertTrue(columns.next());
+                assertEquals("message_id", columns.getString("COLUMN_NAME"));
 
-        assertTrue(columns.next());
-        assertEquals("message_id", columns.getString("COLUMN_NAME"));
+                assertTrue(columns.next());
+                assertEquals("retried", columns.getString("COLUMN_NAME"));
 
-        assertTrue(columns.next());
-        assertEquals("retried", columns.getString("COLUMN_NAME"));
+                assertTrue(columns.next());
+                assertEquals("topic", columns.getString("COLUMN_NAME"));
 
-        assertTrue(columns.next());
-        assertEquals("topic", columns.getString("COLUMN_NAME"));
+                assertTrue(columns.next());
+                assertEquals("qos", columns.getString("COLUMN_NAME"));
 
-        assertTrue(columns.next());
-        assertEquals("qos", columns.getString("COLUMN_NAME"));
+                assertTrue(columns.next());
+                assertEquals("retain", columns.getString("COLUMN_NAME"));
 
-        assertTrue(columns.next());
-        assertEquals("retain", columns.getString("COLUMN_NAME"));
-
-        assertTrue(columns.next());
-        assertEquals("payload", columns.getString("COLUMN_NAME"));
-
-        columns.close();
-        conn.close();
+                assertTrue(columns.next());
+                assertEquals("payload", columns.getString("COLUMN_NAME"));
+            }
+        }
     }
 
     @Test
@@ -148,10 +146,10 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
         diskSpool.add(1L, spoolMessage1);
 
         // Corrupt Database
-        RandomAccessFile f = new RandomAccessFile(spoolerDatabaseFile.toFile(), "rw");
-        f.seek(100);
-        f.writeBytes("Garbage");
-        f.close();
+        try(RandomAccessFile f = new RandomAccessFile(spoolerDatabaseFile.toFile(), "rw")) {
+            f.seek(100);
+            f.writeBytes("Garbage");
+        }
 
         // Fail to add second message
         SpoolMessage spoolMessage2 = SpoolMessage.builder().id(2L).request(request2).build();

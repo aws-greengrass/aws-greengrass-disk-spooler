@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import javax.inject.Inject;
 
 import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
@@ -44,11 +45,11 @@ public class DiskSpoolDAO {
     protected static final String DATABASE_CONNECTION_URL = "jdbc:sqlite:%s";
     protected static final String DATABASE_FILE_NAME = "spooler.db";
     private final Path databasePath;
-    private static final int MAX_TRY = 3;
     private static final Logger logger = LogManager.getLogger(DiskSpoolDAO.class);
-    private final RetryUtils.RetryConfig sqlTransientExceptionRetryConfig =
+    private final ReentrantLock recoverDBLock = new ReentrantLock();
+    private final RetryUtils.RetryConfig sqlStatementRetryConfig =
             RetryUtils.RetryConfig.builder().initialRetryInterval(Duration.ofSeconds(1L))
-                    .maxRetryInterval(Duration.ofSeconds(3L)).maxAttempt(MAX_TRY)
+                    .maxRetryInterval(Duration.ofSeconds(3L)).maxAttempt(3)
                     .retryableExceptions(Collections.singletonList(SQLTransientException.class)).build();
 
     /**
@@ -80,8 +81,8 @@ public class DiskSpoolDAO {
         String query = "SELECT message_id FROM spooler;";
         try (Connection conn = getDbInstance();
              PreparedStatement pstmt = conn.prepareStatement(query);
-             ResultSet rs = RetryUtils.runWithRetry(sqlTransientExceptionRetryConfig, pstmt::executeQuery,
-                     "Execute SQL query", logger)) {
+             ResultSet rs = RetryUtils.runWithRetry(sqlStatementRetryConfig, pstmt::executeQuery,
+                     "get-all-spool-message-ids", logger)) {
             currentIds = getIdsFromRs(rs);
         } catch (SQLException e) {
             checkAndHandleCorruption(e);
@@ -113,8 +114,8 @@ public class DiskSpoolDAO {
         try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setLong(1, messageId);
-            try (ResultSet rs = RetryUtils.runWithRetry(sqlTransientExceptionRetryConfig, pstmt::executeQuery,
-                    "Execute SQL query", logger)) {
+            try (ResultSet rs = RetryUtils.runWithRetry(sqlStatementRetryConfig, pstmt::executeQuery,
+                    "get-spool-message-by-id", logger)) {
                 return getSpoolMessageFromRs(messageId, rs);
             }
         } catch (SQLException e) {
@@ -182,8 +183,8 @@ public class DiskSpoolDAO {
             } else {
                 pstmt.setString(12, request.getContentType());
             }
-            RetryUtils.runWithRetry(sqlTransientExceptionRetryConfig, pstmt::executeUpdate,
-                    "Execute SQL update", logger);
+            RetryUtils.runWithRetry(sqlStatementRetryConfig, pstmt::executeUpdate,
+                    "insert-spool-message", logger);
         } catch (SQLException e) {
             checkAndHandleCorruption(e);
             throw e;
@@ -203,8 +204,8 @@ public class DiskSpoolDAO {
         try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(deleteSQL)) {
             pstmt.setLong(1, messageId);
-            RetryUtils.runWithRetry(sqlTransientExceptionRetryConfig, pstmt::executeUpdate,
-                    "Execute SQL query", logger);
+            RetryUtils.runWithRetry(sqlStatementRetryConfig, pstmt::executeUpdate,
+                    "remove-spool-message-by-id", logger);
         } catch (Exception e) {
             throw new SQLException(e);
         }
@@ -289,15 +290,19 @@ public class DiskSpoolDAO {
         return null;
     }
 
-    synchronized void checkAndHandleCorruption(SQLException e) throws SQLException {
-        if (e.getErrorCode() == SQLiteErrorCode.SQLITE_CORRUPT.code) {
-            logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
+    void checkAndHandleCorruption(SQLException e) throws SQLException {
+        if (recoverDBLock.tryLock()) {
             try {
-                deleteIfExists(databasePath);
+                if (e.getErrorCode() == SQLiteErrorCode.SQLITE_CORRUPT.code) {
+                    logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
+                    deleteIfExists(databasePath);
+                    setUpDatabase();
+                }
             } catch (IOException e2) {
                 throw new SQLException(e2);
+            } finally {
+                recoverDBLock.unlock();
             }
-            setUpDatabase();
         }
     }
 }
