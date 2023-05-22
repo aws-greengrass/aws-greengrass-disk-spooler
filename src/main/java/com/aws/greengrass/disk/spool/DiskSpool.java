@@ -7,6 +7,7 @@ package com.aws.greengrass.disk.spool;
 
 import com.aws.greengrass.config.Topics;
 import com.aws.greengrass.dependency.ImplementsService;
+import com.aws.greengrass.dependency.State;
 import com.aws.greengrass.lifecyclemanager.PluginService;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.LogManager;
@@ -34,6 +35,16 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     @Override
     public boolean isBootstrapRequired(Map<String, Object> newServiceConfig) {
         return true;
+    }
+
+    @Override
+    public void startup() {
+        try {
+            dao.setUpDatabase();
+            reportState(State.RUNNING);
+        } catch (SQLException e) {
+            serviceErrored(e);
+        }
     }
 
     /**

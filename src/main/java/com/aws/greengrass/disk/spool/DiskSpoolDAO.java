@@ -61,12 +61,6 @@ public class DiskSpoolDAO {
     public DiskSpoolDAO(NucleusPaths paths) throws IOException {
         databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
         url = String.format(DATABASE_CONNECTION_URL, databasePath);
-
-        try {
-            setUpDatabase();
-        } catch (SQLException e) {
-            throw new IOException(e);
-        }
     }
 
     /**
@@ -220,7 +214,7 @@ public class DiskSpoolDAO {
         return DriverManager.getConnection(url);
     }
 
-    private void setUpDatabase() throws SQLException {
+    protected void setUpDatabase() throws SQLException {
         String tableCreationString = "CREATE TABLE IF NOT EXISTS spooler ("
                 + "message_id INTEGER PRIMARY KEY, "
                 + "retried INTEGER NOT NULL, "
