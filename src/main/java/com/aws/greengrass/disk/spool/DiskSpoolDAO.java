@@ -291,13 +291,11 @@ public class DiskSpoolDAO {
     }
 
     void checkAndHandleCorruption(SQLException e) throws SQLException {
-        if (recoverDBLock.tryLock()) {
+        if (e.getErrorCode() == SQLiteErrorCode.SQLITE_CORRUPT.code && recoverDBLock.tryLock()) {
             try {
-                if (e.getErrorCode() == SQLiteErrorCode.SQLITE_CORRUPT.code) {
-                    logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
-                    deleteIfExists(databasePath);
-                    setUpDatabase();
-                }
+                logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
+                deleteIfExists(databasePath);
+                setUpDatabase();
             } catch (IOException e2) {
                 throw new SQLException(e2);
             } finally {

@@ -126,24 +126,17 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
         diskSpool = new DiskSpool(kernel.getConfig().getRoot(), dao);
 
         String message1 = "Message1";
-        Publish request1 =
-                Publish.builder().topic("spool").payload(message1.getBytes(StandardCharsets.UTF_8))
-                        .qos(QOS.AT_LEAST_ONCE).messageExpiryIntervalSeconds(2L)
-                        .payloadFormat(Publish.PayloadFormatIndicator.BYTES).contentType("Test").build();
+        Publish request1 = createTestPublishRequestWithMessage(message1);
         String message2 = "Message2";
-        Publish request2 =
-                Publish.builder().topic("spool").payload(message2.getBytes(StandardCharsets.UTF_8))
-                        .qos(QOS.AT_LEAST_ONCE).messageExpiryIntervalSeconds(2L)
-                        .payloadFormat(Publish.PayloadFormatIndicator.BYTES).contentType("Test").build();
+        Publish request2 = createTestPublishRequestWithMessage(message2);
         String message3 = "Message3";
-        Publish request3 =
-                Publish.builder().topic("spool").payload(message3.getBytes(StandardCharsets.UTF_8))
-                        .qos(QOS.AT_LEAST_ONCE).messageExpiryIntervalSeconds(2L)
-                        .payloadFormat(Publish.PayloadFormatIndicator.BYTES).contentType("Test").build();
+        Publish request3 = createTestPublishRequestWithMessage(message3);
 
         // Add first message
         SpoolMessage spoolMessage1 = SpoolMessage.builder().id(1L).request(request1).build();
         diskSpool.add(1L, spoolMessage1);
+        String readMessage1 = new String (diskSpool.getMessageById(1L).getRequest().getPayload(), StandardCharsets.UTF_8);
+        assertEquals(message1, readMessage1);
 
         // Corrupt Database
         try(RandomAccessFile f = new RandomAccessFile(spoolerDatabaseFile.toFile(), "rw")) {
@@ -158,6 +151,8 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
         // Successfully add third Message
         SpoolMessage spoolMessage3 = SpoolMessage.builder().id(3L).request(request3).build();
         diskSpool.add(3L, spoolMessage3);
+        String readMessage3 = new String (diskSpool.getMessageById(3L).getRequest().getPayload(), StandardCharsets.UTF_8);
+        assertEquals(message3, readMessage3);
     }
 
     @Test
@@ -166,20 +161,11 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
         spooler = new Spool(deviceConfiguration, kernel);
 
         String message1 = "Message1";
-        Publish request1 =
-                Publish.builder().topic("spool").payload(message1.getBytes(StandardCharsets.UTF_8))
-                        .qos(QOS.AT_LEAST_ONCE).messageExpiryIntervalSeconds(2L)
-                        .payloadFormat(Publish.PayloadFormatIndicator.BYTES).contentType("Test").build();
+        Publish request1 = createTestPublishRequestWithMessage(message1);
         String message2 = "Message2";
-        Publish request2 =
-                Publish.builder().topic("spool").payload(message2.getBytes(StandardCharsets.UTF_8))
-                        .qos(QOS.AT_LEAST_ONCE).messageExpiryIntervalSeconds(2L)
-                        .payloadFormat(Publish.PayloadFormatIndicator.BYTES).contentType("Test").build();
+        Publish request2 = createTestPublishRequestWithMessage(message2);
         String message3 = "Message3";
-        Publish request3 =
-                Publish.builder().topic("spool").payload(message3.getBytes(StandardCharsets.UTF_8))
-                        .qos(QOS.AT_LEAST_ONCE).messageExpiryIntervalSeconds(2L)
-                        .payloadFormat(Publish.PayloadFormatIndicator.BYTES).contentType("Test").build();
+        Publish request3 = createTestPublishRequestWithMessage(message3);
 
         // Add messages
         spooler.addMessage(request1);
@@ -213,5 +199,11 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
         });
         kernel.launch();
         assertTrue(diskSpoolerRunning.await(TEST_TIME_OUT_SEC, TimeUnit.SECONDS));
+    }
+
+    private Publish createTestPublishRequestWithMessage(String message) {
+        return Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
+                .qos(QOS.AT_LEAST_ONCE).messageExpiryIntervalSeconds(2L)
+                .payloadFormat(Publish.PayloadFormatIndicator.BYTES).contentType("Test").build();
     }
 }
