@@ -25,6 +25,7 @@ import static com.aws.greengrass.testcommons.testutilities.ExceptionLogProtector
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
@@ -56,7 +57,7 @@ public class DiskSpoolDAOTest {
         lenient().when(statement.executeUpdate(anyString())).thenReturn(0);
 
         DiskSpoolDAO diskSpoolDAO = spy(new DiskSpoolDAO(paths));
-        lenient().when(diskSpoolDAO.getDbInstance()).thenReturn(connection);
+        doReturn(connection).when(diskSpoolDAO).getDbInstance();
 
         String message = "Hello";
         Publish request =
@@ -86,7 +87,7 @@ public class DiskSpoolDAOTest {
         lenient().when(statement.executeUpdate(anyString())).thenReturn(0);
 
         DiskSpoolDAO diskSpoolDAO = spy(new DiskSpoolDAO(paths));
-        lenient().when(diskSpoolDAO.getDbInstance()).thenReturn(connection);
+        doReturn(connection).when(diskSpoolDAO).getDbInstance();
 
         String message = "Hello";
         Publish request =
