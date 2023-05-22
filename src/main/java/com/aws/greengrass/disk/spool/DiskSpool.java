@@ -89,16 +89,20 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
      * @param message :
      */
     @Override
-    public void add(long id, SpoolMessage message) {
+    public void add(long id, SpoolMessage message) throws IOException {
         try {
             dao.insertSpoolMessage(message);
         } catch (SQLException e) {
-            // throw new IOException(e);
+            throw new IOException(e);
         }
     }
 
     @Override
     public Iterable<Long> getAllMessageIds() throws IOException {
-        return dao.getAllSpoolMessageIds();
+        try {
+            return dao.getAllSpoolMessageIds();
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
     }
 }
