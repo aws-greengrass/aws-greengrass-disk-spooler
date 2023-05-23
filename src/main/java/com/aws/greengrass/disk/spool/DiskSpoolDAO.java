@@ -13,13 +13,12 @@ import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.mqttclient.v5.UserProperty;
 import com.aws.greengrass.util.NucleusPaths;
 import com.aws.greengrass.util.RetryUtils;
+import com.aws.greengrass.util.SerializerFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.sqlite.SQLiteErrorCode;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -31,6 +30,7 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -46,6 +46,7 @@ public class DiskSpoolDAO {
     protected static final String DATABASE_FILE_NAME = "spooler.db";
     private final Path databasePath;
     private static final Logger logger = LogManager.getLogger(DiskSpoolDAO.class);
+    private static final ObjectMapper mapper = SerializerFactory.getFailSafeJsonObjectMapper();
     private final ReentrantLock recoverDBLock = new ReentrantLock();
     private final RetryUtils.RetryConfig sqlStatementRetryConfig =
             RetryUtils.RetryConfig.builder().initialRetryInterval(Duration.ofSeconds(1L))
@@ -147,7 +148,7 @@ public class DiskSpoolDAO {
                 pstmt.setNull(7, Types.NULL);
             } else {
                 try {
-                    pstmt.setBytes(7, userPropertiesToByteArray(request.getUserProperties()));
+                    pstmt.setString(7, mapper.writeValueAsString(request.getUserProperties()));
                 } catch (IOException e) {
                     throw new SQLException(e);
                 }
@@ -222,7 +223,7 @@ public class DiskSpoolDAO {
                 + "qos INTEGER NOT NULL,"
                 + "retain BOOLEAN,"
                 + "payload BLOB,"
-                + "userProperties BLOB,"
+                + "userProperties TEXT,"
                 + "messageExpiryIntervalSeconds INTEGER,"
                 + "correlationData BLOB,"
                 + "responseTopic STRING,"
@@ -237,7 +238,7 @@ public class DiskSpoolDAO {
         }
     }
 
-    private SpoolMessage getSpoolMessageFromRs(long messageId, ResultSet rs) throws SQLException {
+    private SpoolMessage getSpoolMessageFromRs(long messageId, ResultSet rs) throws SQLException, IOException {
         if (rs.next()) {
             Publish request = Publish.builder()
                     .qos(QOS.fromInt(rs.getInt("qos")))
@@ -249,7 +250,9 @@ public class DiskSpoolDAO {
                     .responseTopic(rs.getString("responseTopic"))
                     .correlationData(rs.getBytes("correlationData"))
                     .contentType(rs.getString("contentType"))
-                    .userProperties(byteArrayToUserProperties(rs.getBytes("userProperties"))).build();
+                    .userProperties(rs.getString("userProperties") == null ? null :
+                            Arrays.asList(mapper.readValue(rs.getString("userProperties"),
+                            UserProperty[].class))).build();
 
             return SpoolMessage.builder()
                     .id(messageId)
@@ -258,30 +261,6 @@ public class DiskSpoolDAO {
         } else {
             return null;
         }
-    }
-
-    private byte[] userPropertiesToByteArray(List<UserProperty> userProps) throws IOException {
-        byte[] serialized;
-        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
-             ObjectOutputStream oos = new ObjectOutputStream(baos)) {
-            oos.writeObject(userProps);
-            oos.flush();
-            serialized = baos.toByteArray();
-        }
-        return serialized;
-    }
-
-    private List<UserProperty> byteArrayToUserProperties(byte[] userProperties) {
-        if (userProperties == null || userProperties.length == 0) {
-            return null;
-        }
-
-        try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(userProperties))) {
-            return (List<UserProperty>) ois.readObject();
-        } catch (IOException | ClassNotFoundException e) {
-            // TODO: Add logging and exception handling
-        }
-        return null;
     }
 
     void checkAndHandleCorruption(SQLException e) throws SQLException {

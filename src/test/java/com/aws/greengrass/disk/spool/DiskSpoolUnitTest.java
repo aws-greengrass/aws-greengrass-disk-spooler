@@ -230,10 +230,9 @@ public class DiskSpoolUnitTest extends BaseITCase {
         assertEquals(id2, popAndRemoveNextId());
         assertEquals(id3, popAndRemoveNextId());
     }
-    @Disabled @Test
+    @Test
     void GIVEN_request_with_MQTT5_fields_WHEN_add_to_spool_and_extract_THEN_text_should_stay_the_same()
             throws InterruptedException, SpoolerStoreException {
-        // TODO: Uncomment @Disabled once UserProperty is serializable
         String message = "Hello";
         UserProperty prop1 = new UserProperty("aaa", "bbb");
         UserProperty prop2 = new UserProperty("ccc", "ddd");
