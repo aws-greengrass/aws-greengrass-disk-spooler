@@ -17,7 +17,6 @@ import com.aws.greengrass.util.SerializerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.sqlite.SQLiteErrorCode;
 
-
 import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -245,8 +244,10 @@ public class DiskSpoolDAO {
                     .retain(rs.getBoolean("retain"))
                     .topic(rs.getString("topic"))
                     .payload(rs.getBytes("payload"))
-                    .payloadFormat(Publish.PayloadFormatIndicator.fromInt(rs.getInt("payloadFormat")))
-                    .messageExpiryIntervalSeconds(rs.getLong("messageExpiryIntervalSeconds"))
+                    .payloadFormat(rs.getObject("messageExpiryIntervalSeconds") == null
+                            ? null : Publish.PayloadFormatIndicator.fromInt(rs.getInt("payloadFormat")))
+                    .messageExpiryIntervalSeconds(rs.getObject("messageExpiryIntervalSeconds") == null
+                            ? null : rs.getLong("messageExpiryIntervalSeconds"))
                     .responseTopic(rs.getString("responseTopic"))
                     .correlationData(rs.getBytes("correlationData"))
                     .contentType(rs.getString("contentType"))
