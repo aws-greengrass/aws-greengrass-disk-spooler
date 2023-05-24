@@ -21,7 +21,6 @@ import com.aws.greengrass.mqttclient.v5.UserProperty;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -230,10 +229,9 @@ public class DiskSpoolUnitTest extends BaseITCase {
         assertEquals(id2, popAndRemoveNextId());
         assertEquals(id3, popAndRemoveNextId());
     }
-    @Disabled @Test
-    void GIVEN_request_with_MQTT5_fields_WHEN_add_to_spool_and_extract_THEN_text_should_stay_the_same()
+    @Test
+    void GIVEN_request_with_MQTT5_fields_WHEN_add_to_spool_and_extract_THEN_fields_should_stay_the_same()
             throws InterruptedException, SpoolerStoreException {
-        // TODO: Uncomment @Disabled once UserProperty is serializable
         String message = "Hello";
         UserProperty prop1 = new UserProperty("aaa", "bbb");
         UserProperty prop2 = new UserProperty("ccc", "ddd");
@@ -253,9 +251,16 @@ public class DiskSpoolUnitTest extends BaseITCase {
                         .build();
         long id1 = spool.addMessage(request).getId();
         Publish response = spool.getMessageById(id1).getRequest();
-        String result_string = new String(response.getPayload(), StandardCharsets.UTF_8);
-        List<UserProperty> result_list = response.getUserProperties();
-        assertEquals(message, result_string);
-        assertEquals(props, result_list);
+        assertEquals(request, response);
+    }
+    @Test
+    void GIVEN_request_with_MQTT3_fields_WHEN_add_to_spool_and_extract_THEN_MQTT5_fields_should_be_null()
+            throws InterruptedException, SpoolerStoreException {
+        String message = "Hello";
+        Publish request =
+                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8)).qos(QOS.AT_LEAST_ONCE).build();
+        long id1 = spool.addMessage(request).getId();
+        Publish response = spool.getMessageById(id1).getRequest();
+        assertEquals(request, response);
     }
 }
