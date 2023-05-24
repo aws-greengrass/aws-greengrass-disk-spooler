@@ -14,6 +14,7 @@ import com.aws.greengrass.mqttclient.v5.UserProperty;
 import com.aws.greengrass.util.NucleusPaths;
 import com.aws.greengrass.util.RetryUtils;
 import com.aws.greengrass.util.SerializerFactory;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.sqlite.SQLiteErrorCode;
 
@@ -29,7 +30,6 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -251,9 +251,9 @@ public class DiskSpoolDAO {
                     .responseTopic(rs.getString("responseTopic"))
                     .correlationData(rs.getBytes("correlationData"))
                     .contentType(rs.getString("contentType"))
-                    .userProperties(rs.getString("userProperties") == null ? null :
-                            Arrays.asList(mapper.readValue(rs.getString("userProperties"),
-                            UserProperty[].class))).build();
+                    .userProperties(rs.getString("userProperties") == null
+                            ? null : mapper.readValue(rs.getString("userProperties"),
+                                    new TypeReference<List<UserProperty>>(){})).build();
 
             return SpoolMessage.builder()
                     .id(messageId)

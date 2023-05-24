@@ -35,7 +35,6 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -252,19 +251,7 @@ public class DiskSpoolUnitTest extends BaseITCase {
                         .build();
         long id1 = spool.addMessage(request).getId();
         Publish response = spool.getMessageById(id1).getRequest();
-        String result_string = new String(response.getPayload(), StandardCharsets.UTF_8);
-        List<UserProperty> result_list = response.getUserProperties();
-        assertEquals(message, result_string);
-        assertEquals(props, result_list);
-        assertEquals(request.getTopic(), response.getTopic());
-        assertEquals(request.getQos(), response.getQos());
-        assertEquals(request.getMessageExpiryIntervalSeconds(), response.getMessageExpiryIntervalSeconds());
-        assertEquals(request.getResponseTopic(), response.getResponseTopic());
-        assertEquals(request.getContentType(), response.getContentType());
-        assertArrayEquals(request.getCorrelationData(), response.getCorrelationData());
-        assertEquals(request.getPayloadFormat(), response.getPayloadFormat());
-        assertEquals(request.getUserProperties(), response.getUserProperties());
-        assertEquals(request.isRetain(), response.isRetain());
+        assertEquals(request, response);
     }
     @Test
     void GIVEN_request_with_MQTT3_fields_WHEN_add_to_spool_and_extract_THEN_MQTT5_fields_should_be_null()
@@ -274,15 +261,6 @@ public class DiskSpoolUnitTest extends BaseITCase {
                 Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8)).qos(QOS.AT_LEAST_ONCE).build();
         long id1 = spool.addMessage(request).getId();
         Publish response = spool.getMessageById(id1).getRequest();
-        assertNull(response.getMessageExpiryIntervalSeconds());
-        assertNull(response.getResponseTopic());
-        assertNull(response.getContentType());
-        assertNull(response.getCorrelationData());
-        assertNull(response.getPayloadFormat());
-        assertNull(response.getUserProperties());
-        String result_string = new String(response.getPayload(), StandardCharsets.UTF_8);
-        assertEquals("Hello", result_string);
-        assertEquals(request.getTopic(), response.getTopic());
-        assertEquals(request.getQos(), response.getQos());
+        assertEquals(request, response);
     }
 }
