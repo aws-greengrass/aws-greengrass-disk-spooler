@@ -12,6 +12,7 @@ import com.aws.greengrass.lifecyclemanager.PluginService;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.LogManager;
 import com.aws.greengrass.mqttclient.spool.CloudMessageSpool;
+import com.aws.greengrass.mqttclient.spool.Spool;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 
 import java.io.IOException;
@@ -41,6 +42,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public void startup() {
         try {
             dao.setUpDatabase();
+            context.get(Spool.class).executeQueueSync(this);
             reportState(State.RUNNING);
         } catch (SQLException e) {
             serviceErrored(e);

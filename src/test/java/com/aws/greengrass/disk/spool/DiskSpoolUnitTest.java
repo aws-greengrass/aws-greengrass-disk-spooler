@@ -42,6 +42,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.spy;
 
+// TODO: Refactor to correctly use the Class under test (probably remove some tests as well,
+//  as spooler behavior shouldn't be tested here but in Nucleus)
 @ExtendWith({GGExtension.class, MockitoExtension.class})
 public class DiskSpoolUnitTest extends BaseITCase {
     @TempDir
@@ -207,28 +209,6 @@ public class DiskSpoolUnitTest extends BaseITCase {
         assertThrows(SpoolerStoreException.class, () -> spool.addMessage(request));
     }
 
-    @Test
-    void GIVEN_requests_added_to_spooler_WHEN_spooler_restarts_THEN_queue_should_persist()
-            throws SpoolerStoreException, InterruptedException, IOException {
-        String message = "Hello";
-        Publish request =
-                Publish.builder().topic("spool").payload(message.getBytes(StandardCharsets.UTF_8))
-                        .qos(QOS.AT_LEAST_ONCE).build();
-        long id1 = spool.addMessage(request).getId();
-        long id2 = spool.addMessage(request).getId();
-        long id3 = spool.addMessage(request).getId();
-        assertEquals(spool.getCurrentMessageCount(), 3);
-
-        runLast();
-        runFirst();
-
-        //check length of RAM queue (we expect this to be synced with the db)
-        assertEquals(3, spool.getCurrentMessageCount());
-        //check the specific ids stored in spooler
-        assertEquals(id1, popAndRemoveNextId());
-        assertEquals(id2, popAndRemoveNextId());
-        assertEquals(id3, popAndRemoveNextId());
-    }
     @Test
     void GIVEN_request_with_MQTT5_fields_WHEN_add_to_spool_and_extract_THEN_fields_should_stay_the_same()
             throws InterruptedException, SpoolerStoreException {

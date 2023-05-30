@@ -7,3 +7,12 @@ services:
         spooler:
           storageType: Disk
           maxSizeInBytes: 25
+  aws.greengrass.DiskSpooler:
+    configuration:
+  main:
+    lifecycle:
+      install:
+        all: echo All installed
+    dependencies:
+        - aws.greengrass.DiskSpooler
+        - aws.greengrass.Nucleus
