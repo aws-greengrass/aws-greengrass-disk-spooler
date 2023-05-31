@@ -3,7 +3,7 @@
   "ComponentName": "{COMPONENT_NAME}",
   "ComponentVersion": "{COMPONENT_VERSION}",
   "ComponentType": "aws.greengrass.plugin",
-  "ComponentDescription": "The Disk Spooler stores MQTT messages destined for AWS IoT Core in a database as opposed to, the default, in memory.",
+  "ComponentDescription": "The Disk Spooler component stores MQTT messages destined for AWS IoT Core in a database, as opposed to in memory, when offline.",
   "ComponentPublisher": "{COMPONENT_PUBLISHER}",
   "ComponentDependencies": {
     "aws.greengrass.Nucleus": {
