@@ -1,0 +1,16 @@
+{
+  "component" :{
+    "aws.greengrass.DiskSpooler": {
+      "author": "AWS",
+      "version": "NEXT_PATCH",
+      "build": {
+        "build_system": "maven"
+      },
+      "publish": {
+        "bucket": "gg-dev-artifacts",
+        "region": "us-east-1"
+      }
+    }
+  },
+  "gdk_version": "1.1.0"
+}
