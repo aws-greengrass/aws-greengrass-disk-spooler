@@ -19,7 +19,6 @@ import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -44,8 +43,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith({GGExtension.class, MockitoExtension.class})
-// TODO: Enable after Plugin loading changed in Nucleus
-@Disabled
 public class DiskSpoolIntegrationTest extends BaseITCase {
     @TempDir
     Path rootDir;
@@ -62,6 +59,7 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
 
     @BeforeEach
     void beforeEach() throws InterruptedException, IOException {
+        System.setProperty("aws.greengrass.scanSelfClasspath", "true");
         startKernelWithConfig();
         spoolerDatabaseFile = kernel.getNucleusPaths()
                 .workPath(DiskSpool.PERSISTENCE_SERVICE_NAME)

@@ -71,6 +71,7 @@ public class DiskSpoolUnitTest extends BaseITCase {
     }
 
     private void runFirst() throws InterruptedException {
+        System.setProperty("aws.greengrass.scanSelfClasspath", "true");
         startKernelWithConfig();
         config.lookup("spooler", GG_SPOOL_MAX_SIZE_IN_BYTES_KEY).withValue(25L);
         config.lookup("spooler", GG_SPOOL_STORAGE_TYPE_KEY).withValue(String.valueOf(SpoolerStorageType.Disk));
