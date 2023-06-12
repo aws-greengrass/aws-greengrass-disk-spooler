@@ -7,12 +7,10 @@ package com.aws.greengrass.disk.spool;
 
 import com.aws.greengrass.config.Topics;
 import com.aws.greengrass.dependency.ImplementsService;
-import com.aws.greengrass.dependency.State;
 import com.aws.greengrass.lifecyclemanager.PluginService;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.LogManager;
 import com.aws.greengrass.mqttclient.spool.CloudMessageSpool;
-import com.aws.greengrass.mqttclient.spool.Spool;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 
 import java.io.IOException;
@@ -36,17 +34,6 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     @Override
     public boolean isBootstrapRequired(Map<String, Object> newServiceConfig) {
         return true;
-    }
-
-    @Override
-    public void startup() {
-        try {
-            dao.setUpDatabase();
-            context.get(Spool.class).executeQueueSync(this);
-            reportState(State.RUNNING);
-        } catch (SQLException e) {
-            serviceErrored(e);
-        }
     }
 
     /**
@@ -107,6 +94,16 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
             return dao.getAllSpoolMessageIds();
         } catch (SQLException e) {
             throw new IOException(e);
+        }
+    }
+
+    @Override
+    public void initializeSpooler() throws IOException {
+        try {
+            dao.setUpDatabase();
+            logger.atInfo().log("Finished setting up Database");
+        } catch (SQLException exception) {
+            throw new IOException(exception);
         }
     }
 }
