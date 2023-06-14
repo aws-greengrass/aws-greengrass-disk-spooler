@@ -15,7 +15,6 @@ import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 
 import java.io.IOException;
 import java.sql.SQLException;
-import java.util.Map;
 import javax.inject.Inject;
 
 @ImplementsService(name = DiskSpool.PERSISTENCE_SERVICE_NAME, autostart = true)
@@ -29,11 +28,6 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public DiskSpool(Topics topics, DiskSpoolDAO dao) {
         super(topics);
         this.dao = dao;
-    }
-
-    @Override
-    public boolean isBootstrapRequired(Map<String, Object> newServiceConfig) {
-        return true;
     }
 
     /**
