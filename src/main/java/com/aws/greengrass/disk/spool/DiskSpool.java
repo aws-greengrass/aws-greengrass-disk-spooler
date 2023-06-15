@@ -58,7 +58,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public void removeMessageById(long id) {
         try {
             dao.removeSpoolMessageById(id);
-            logger.atDebug().kv("MessageId", id).log("Removed message from Disk Spooler");
+            logger.atTrace().kv("MessageId", id).log("Removed message from Disk Spooler");
         } catch (SQLException e) {
             logger.atWarn()
                     .kv("messageId", id)
@@ -76,7 +76,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public void add(long id, SpoolMessage message) throws IOException {
         try {
             dao.insertSpoolMessage(message);
-            logger.atDebug().kv("MessageId", id).log("Added message to Disk Spooler");
+            logger.atTrace().kv("MessageId", id).log("Added message to Disk Spooler");
         } catch (SQLException e) {
             throw new IOException(e);
         }
