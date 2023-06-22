@@ -102,7 +102,7 @@ public class DiskSpoolDAO {
      * @throws SQLException when fails to get a SpoolMessage by id
      */
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    public SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
+    public synchronized SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
         String query = "SELECT retried, topic, qos, retain, payload, userProperties, messageExpiryIntervalSeconds, "
                 + "correlationData, responseTopic, payloadFormat, contentType FROM spooler WHERE message_id = ?;";
         try (Connection conn = getDbInstance();
@@ -126,7 +126,7 @@ public class DiskSpoolDAO {
      * @throws SQLException when fails to insert SpoolMessage in the database
      */
     @SuppressWarnings({"PMD.ExceptionAsFlowControl", "PMD.AvoidCatchingGenericException"})
-    public void insertSpoolMessage(SpoolMessage message) throws SQLException {
+    public synchronized void insertSpoolMessage(SpoolMessage message) throws SQLException {
         String sqlString =
                 "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload, userProperties, "
                         + "messageExpiryIntervalSeconds, correlationData, responseTopic, payloadFormat, contentType) "
@@ -193,7 +193,7 @@ public class DiskSpoolDAO {
      * @throws SQLException when fails to remove a SpoolMessage by id
      */
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    public void removeSpoolMessageById(Long messageId) throws SQLException {
+    public synchronized void removeSpoolMessageById(Long messageId) throws SQLException {
         String deleteSQL = "DELETE FROM spooler WHERE message_id = ?;";
         try (Connection conn = getDbInstance();
             PreparedStatement pstmt = conn.prepareStatement(deleteSQL)) {
