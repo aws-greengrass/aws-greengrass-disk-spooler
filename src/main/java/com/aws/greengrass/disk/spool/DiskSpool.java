@@ -30,6 +30,16 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
         this.dao = dao;
     }
 
+    @Override
+    public void shutdown() throws InterruptedException {
+        // Close the database connection
+        try {
+            dao.close();
+        } catch (SQLException e) {
+            logger.atError().cause(e).log("Failed to close database connection during service shutdown");
+        }
+        super.shutdown();
+    }
     /**
      * This function takes an id and returns a SpoolMessage from the db with the same id.
      * @param id : id assigned to MQTT message
