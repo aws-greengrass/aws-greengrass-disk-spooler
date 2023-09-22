@@ -51,16 +51,27 @@ public class DiskSpoolDAO {
             RetryUtils.RetryConfig.builder().initialRetryInterval(Duration.ofSeconds(1L))
                     .maxRetryInterval(Duration.ofSeconds(3L)).maxAttempt(3)
                     .retryableExceptions(Collections.singletonList(SQLTransientException.class)).build();
-
+    private static Connection dbConnection;
     /**
      * This method will construct the database path.
      * @param paths The path to the working directory
      * @throws IOException when fails to set up the database
      */
     @Inject
-    public DiskSpoolDAO(NucleusPaths paths) throws IOException {
+    public DiskSpoolDAO(NucleusPaths paths) throws IOException, SQLException {
         databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
         url = String.format(DATABASE_CONNECTION_URL, databasePath);
+        init();
+    }
+
+    /** Initialize the singleton database connection
+     *
+     * @throws SQLException
+     */
+    private synchronized void init() throws SQLException {
+        if (dbConnection == null) {
+            dbConnection = getDbInstance();
+        }
     }
 
     /**
@@ -71,22 +82,22 @@ public class DiskSpoolDAO {
      */
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public Iterable<Long> getAllSpoolMessageIds() throws SQLException {
-        List<Long> currentIds;
-        String query = "SELECT message_id FROM spooler;";
-        try (Connection conn = getDbInstance();
-             PreparedStatement pstmt = conn.prepareStatement(query);
-             ResultSet rs = RetryUtils.runWithRetry(sqlStatementRetryConfig, pstmt::executeQuery,
-                     "get-all-spool-message-ids", logger)) {
-            currentIds = getIdsFromRs(rs);
-        } catch (SQLException e) {
-            checkAndHandleCorruption(e);
-            throw e;
-        } catch (Exception e) {
-            throw new SQLException("Failed to get Spool Message IDs", e);
+        synchronized (dbConnection) {
+            List<Long> currentIds;
+            String query = "SELECT message_id FROM spooler;";
+            try (PreparedStatement pstmt = dbConnection.prepareStatement(query);
+                 ResultSet rs = RetryUtils.runWithRetry(sqlStatementRetryConfig, pstmt::executeQuery,
+                         "get-all-spool-message-ids", logger)) {
+                currentIds = getIdsFromRs(rs);
+            } catch (SQLException e) {
+                checkAndHandleCorruption(e);
+                throw e;
+            } catch (Exception e) {
+                throw new SQLException("Failed to get Spool Message IDs", e);
+            }
+            return currentIds;
         }
-        return currentIds;
     }
-
     private List<Long> getIdsFromRs(ResultSet rs) throws SQLException {
         List<Long> currentIds = new ArrayList<>();
         while (rs.next()) {
@@ -105,8 +116,7 @@ public class DiskSpoolDAO {
     public synchronized SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
         String query = "SELECT retried, topic, qos, retain, payload, userProperties, messageExpiryIntervalSeconds, "
                 + "correlationData, responseTopic, payloadFormat, contentType FROM spooler WHERE message_id = ?;";
-        try (Connection conn = getDbInstance();
-            PreparedStatement pstmt = conn.prepareStatement(query)) {
+        try (PreparedStatement pstmt = dbConnection.prepareStatement(query)) {
             pstmt.setLong(1, messageId);
             try (ResultSet rs = RetryUtils.runWithRetry(sqlStatementRetryConfig, pstmt::executeQuery,
                     "get-spool-message-by-id", logger)) {
@@ -132,8 +142,7 @@ public class DiskSpoolDAO {
                         + "messageExpiryIntervalSeconds, correlationData, responseTopic, payloadFormat, contentType) "
                         + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?);";
         Publish request = message.getRequest();
-        try (Connection conn = getDbInstance();
-            PreparedStatement pstmt = conn.prepareStatement(sqlString)) {
+        try (PreparedStatement pstmt = dbConnection.prepareStatement(sqlString)) {
             pstmt.setLong(1, message.getId());
             pstmt.setInt(2, message.getRetried().get());
 
@@ -195,8 +204,7 @@ public class DiskSpoolDAO {
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public synchronized void removeSpoolMessageById(Long messageId) throws SQLException {
         String deleteSQL = "DELETE FROM spooler WHERE message_id = ?;";
-        try (Connection conn = getDbInstance();
-            PreparedStatement pstmt = conn.prepareStatement(deleteSQL)) {
+        try (PreparedStatement pstmt = dbConnection.prepareStatement(deleteSQL)) {
             pstmt.setLong(1, messageId);
             RetryUtils.runWithRetry(sqlStatementRetryConfig, pstmt::executeUpdate,
                     "remove-spool-message-by-id", logger);
@@ -214,6 +222,13 @@ public class DiskSpoolDAO {
         return DriverManager.getConnection(url);
     }
 
+    public void close() throws SQLException {
+        synchronized (dbConnection) {
+            if (dbConnection != null) {
+                dbConnection.close();
+            }
+        }
+    }
     protected void setUpDatabase() throws SQLException {
         String tableCreationString = "CREATE TABLE IF NOT EXISTS spooler ("
                 + "message_id INTEGER PRIMARY KEY, "
@@ -230,10 +245,11 @@ public class DiskSpoolDAO {
                 + "contentType STRING"
                 + ");";
         DriverManager.registerDriver(new org.sqlite.JDBC());
-        try (Connection conn = getDbInstance();
-            Statement st = conn.createStatement()) {
-            //create new table if table doesn't exist
-            st.executeUpdate(tableCreationString);
+        synchronized (dbConnection) {
+            try (Statement st = dbConnection.createStatement()) {
+                // Create new table if it doesn't exist
+                st.executeUpdate(tableCreationString);
+            }
         }
     }
 

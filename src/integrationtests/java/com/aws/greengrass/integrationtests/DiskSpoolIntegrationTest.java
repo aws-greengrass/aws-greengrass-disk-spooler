@@ -117,7 +117,7 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
 
     @Test
     void GIVEN_disk_spool_plugin_WHEN_operation_fails_with_database_corruption_THEN_database_recreated_AND_next_operation_successful()
-            throws IOException {
+            throws IOException, SQLException {
 
         deviceConfiguration = new DeviceConfiguration(kernel);
         dao = new DiskSpoolDAO(kernel.getNucleusPaths());
