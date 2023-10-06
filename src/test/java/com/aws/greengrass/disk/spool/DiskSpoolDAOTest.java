@@ -10,7 +10,6 @@ import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import com.aws.greengrass.util.NucleusPaths;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -21,7 +20,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -29,7 +27,6 @@ import java.sql.SQLException;
 import java.sql.SQLTransientException;
 import java.sql.Statement;
 
-import static com.aws.greengrass.disk.spool.DiskSpool.logger;
 import static com.aws.greengrass.testcommons.testutilities.ExceptionLogProtector.ignoreExceptionOfType;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -50,30 +47,7 @@ public class DiskSpoolDAOTest {
     @Mock
     private NucleusPaths paths;
 
-    @AfterEach
-    void cleanUp() {
-        // Ensure all DB resources are closed
-        try {
-            if (preparedStatement != null) {
-                preparedStatement.close();
-            }
-            if (statement != null) {
-                statement.close();
-            }
-            if (dbConnection != null) {
-                dbConnection.close();
-            }
-        } catch (SQLException e) {
-            logger.error("Error closing DB resources", e);
-        }
-        // Try to delete the spooler.db file
-        try {
-            Path dbFilePath = currDir.resolve("spooler.db");
-            Files.deleteIfExists(dbFilePath);
-        } catch (IOException e) {
-            logger.error("Error deleting spooler.db file", e);
-        }
-    }
+
 
     @Test
     void GIVEN_request_with_text_WHEN_operation_to_spool_fail_and_DB_corrupt_THEN_should_recover_DB()
@@ -102,6 +76,8 @@ public class DiskSpoolDAOTest {
         assertThrows(SQLException.class, () -> diskSpoolDAO.insertSpoolMessage(spoolMessage));
         verify(diskSpoolDAO, times(1)).checkAndHandleCorruption(sqlException);
         assertDoesNotThrow(() ->diskSpoolDAO.insertSpoolMessage(spoolMessage));
+        dbConnection.close();
+        verify(dbConnection, times(1)).close();
     }
 
     @Test
@@ -132,5 +108,7 @@ public class DiskSpoolDAOTest {
 
         SpoolMessage spoolMessage = SpoolMessage.builder().id(1L).request(request).build();
         assertDoesNotThrow(() -> diskSpoolDAO.insertSpoolMessage(spoolMessage));
+        dbConnection.close();
+        verify(dbConnection, times(1)).close();
     }
 }
