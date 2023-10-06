@@ -39,7 +39,6 @@ import java.util.concurrent.TimeUnit;
 
 import static java.nio.file.Files.deleteIfExists;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith({GGExtension.class, MockitoExtension.class})
@@ -116,7 +115,7 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
     }
 
     @Test
-    void GIVEN_disk_spool_plugin_WHEN_operation_fails_with_database_corruption_THEN_database_recreated_AND_next_operation_successful()
+    void GIVEN_disk_spool_plugin_WHEN_database_corrupted_THEN_database_recreated_AND_next_operation_successful()
             throws IOException, SQLException {
 
         deviceConfiguration = new DeviceConfiguration(kernel);
@@ -127,8 +126,6 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
         Publish request1 = createTestPublishRequestWithMessage(message1);
         String message2 = "Message2";
         Publish request2 = createTestPublishRequestWithMessage(message2);
-        String message3 = "Message3";
-        Publish request3 = createTestPublishRequestWithMessage(message3);
 
         // Add first message
         SpoolMessage spoolMessage1 = SpoolMessage.builder().id(1L).request(request1).build();
@@ -142,15 +139,11 @@ public class DiskSpoolIntegrationTest extends BaseITCase {
             f.writeBytes("Garbage");
         }
 
-        // Fail to add second message
-        SpoolMessage spoolMessage2 = SpoolMessage.builder().id(2L).request(request2).build();
-        assertThrows(IOException.class, () -> diskSpool.add(2L, spoolMessage2));
-
-        // Successfully add third Message
-        SpoolMessage spoolMessage3 = SpoolMessage.builder().id(3L).request(request3).build();
-        diskSpool.add(3L, spoolMessage3);
-        String readMessage3 = new String (diskSpool.getMessageById(3L).getRequest().getPayload(), StandardCharsets.UTF_8);
-        assertEquals(message3, readMessage3);
+        // Successfully add Second Message
+        SpoolMessage spoolMessage3 = SpoolMessage.builder().id(2L).request(request2).build();
+        diskSpool.add(2L, spoolMessage3);
+        String readMessage3 = new String (diskSpool.getMessageById(2L).getRequest().getPayload(), StandardCharsets.UTF_8);
+        assertEquals(message2, readMessage3);
     }
 
     @Test

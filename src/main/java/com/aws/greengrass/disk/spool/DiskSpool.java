@@ -45,6 +45,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
      * @param id : id assigned to MQTT message
      * @return payload of the MQTT message stored with id
      */
+
     @Override
     public SpoolMessage getMessageById(long id) {
         try {
