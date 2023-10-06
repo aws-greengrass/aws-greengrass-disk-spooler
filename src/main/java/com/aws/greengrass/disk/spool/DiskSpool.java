@@ -21,7 +21,7 @@ import javax.inject.Inject;
 public class DiskSpool extends PluginService implements CloudMessageSpool {
 
     public static final String PERSISTENCE_SERVICE_NAME = "aws.greengrass.DiskSpooler";
-    private static final Logger logger = LogManager.getLogger(DiskSpool.class);
+    static final Logger logger = LogManager.getLogger(DiskSpool.class);
     private final DiskSpoolDAO dao;
 
     @Inject
