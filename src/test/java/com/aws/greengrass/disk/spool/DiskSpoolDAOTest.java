@@ -10,6 +10,7 @@ import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import com.aws.greengrass.util.NucleusPaths;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -47,7 +48,12 @@ public class DiskSpoolDAOTest {
     @Mock
     private NucleusPaths paths;
 
-
+    @AfterEach
+    public void cleanup() throws SQLException {
+        if (dbConnection != null && !dbConnection.isClosed()) {
+            dbConnection.close();
+        }
+    }
 
     @Test
     void GIVEN_request_with_text_WHEN_operation_to_spool_fail_and_DB_corrupt_THEN_should_recover_DB()
@@ -76,8 +82,6 @@ public class DiskSpoolDAOTest {
         assertThrows(SQLException.class, () -> diskSpoolDAO.insertSpoolMessage(spoolMessage));
         verify(diskSpoolDAO, times(1)).checkAndHandleCorruption(sqlException);
         assertDoesNotThrow(() ->diskSpoolDAO.insertSpoolMessage(spoolMessage));
-        dbConnection.close();
-        verify(dbConnection, times(1)).close();
     }
 
     @Test
@@ -108,7 +112,5 @@ public class DiskSpoolDAOTest {
 
         SpoolMessage spoolMessage = SpoolMessage.builder().id(1L).request(request).build();
         assertDoesNotThrow(() -> diskSpoolDAO.insertSpoolMessage(spoolMessage));
-        dbConnection.close();
-        verify(dbConnection, times(1)).close();
     }
 }
