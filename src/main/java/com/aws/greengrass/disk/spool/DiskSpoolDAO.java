@@ -11,10 +11,10 @@ import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.mqttclient.v5.UserProperty;
+import com.aws.greengrass.util.LockScope;
 import com.aws.greengrass.util.NucleusPaths;
 import com.aws.greengrass.util.RetryUtils;
 import com.aws.greengrass.util.SerializerFactory;
-import com.aws.greengrass.util.LockScope;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.sqlite.SQLiteErrorCode;
@@ -35,8 +35,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
-import javax.inject.Inject;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import javax.inject.Inject;
 
 import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
 import static java.nio.file.Files.deleteIfExists;
@@ -60,7 +60,9 @@ public class DiskSpoolDAO {
      * This method will construct the database path.
      * @param paths The path to the working directory
      * @throws IOException when fails to set up the database
+     * @throws SQLException when fails to make database connection
      */
+
     @Inject
     public DiskSpoolDAO(NucleusPaths paths) throws IOException, SQLException {
         databasePath = paths.workPath(PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
@@ -68,13 +70,18 @@ public class DiskSpoolDAO {
         init();
     }
 
-    /** Initialize the singleton database connection
+    /** Initialize the singleton database connection.
      *
-     * @throws SQLException
+     * @throws SQLException when fails to make database connection
      */
-    private synchronized void init() throws SQLException {
-        if (dbConnection == null) {
-            dbConnection = getDbInstance();
+    synchronized void init() throws SQLException {
+        try (LockScope ignored = LockScope.lock(dbConnectionLock.writeLock())) {
+            if (dbConnection == null || dbConnection.isClosed() || !isConnectionHealthy(dbConnection)) {
+                if (dbConnection != null && !dbConnection.isClosed()) {
+                    dbConnection.close(); // close the existing connection if it's unhealthy
+                }
+                dbConnection = getDbInstance(); // get a new connection instance
+            }
         }
     }
 
@@ -84,9 +91,10 @@ public class DiskSpoolDAO {
      * @return ordered list of the existing ids in the persistent queue
      * @throws SQLException when fails to get SpoolMessage IDs
      */
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    @SuppressWarnings({"PMD.ExceptionAsFlowControl", "PMD.AvoidCatchingGenericException"})
     public Iterable<Long> getAllSpoolMessageIds() throws SQLException {
         try (LockScope ignored = LockScope.lock(dbConnectionLock.readLock())) {
+            ensureConnection();
             List<Long> currentIds;
             String query = "SELECT message_id FROM spooler;";
             try (PreparedStatement pstmt = dbConnection.prepareStatement(query);
@@ -102,6 +110,7 @@ public class DiskSpoolDAO {
             return currentIds;
         }
     }
+
     private List<Long> getIdsFromRs(ResultSet rs) throws SQLException {
         List<Long> currentIds = new ArrayList<>();
         while (rs.next()) {
@@ -116,9 +125,10 @@ public class DiskSpoolDAO {
      * @return SpoolMessage
      * @throws SQLException when fails to get a SpoolMessage by id
      */
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    public  SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
+    @SuppressWarnings({"PMD.ExceptionAsFlowControl", "PMD.AvoidCatchingGenericException"})
+    public synchronized SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
         try (LockScope ignored = LockScope.lock(dbConnectionLock.readLock())) {
+            ensureConnection();
             String query = "SELECT retried, topic, qos, retain, payload, userProperties, messageExpiryIntervalSeconds, "
                     + "correlationData, responseTopic, payloadFormat, contentType FROM spooler WHERE message_id = ?;";
             try (PreparedStatement pstmt = dbConnection.prepareStatement(query)) {
@@ -142,11 +152,13 @@ public class DiskSpoolDAO {
      * @throws SQLException when fails to insert SpoolMessage in the database
      */
     @SuppressWarnings({"PMD.ExceptionAsFlowControl", "PMD.AvoidCatchingGenericException"})
-    public void insertSpoolMessage(SpoolMessage message) throws SQLException {
-        try (LockScope ignored = LockScope.lock(dbConnectionLock.writeLock())) {
+    public synchronized void insertSpoolMessage(SpoolMessage message) throws SQLException {
+        try (LockScope ignored = LockScope.lock(dbConnectionLock.readLock())) {
+            ensureConnection();
             String sqlString =
                     "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload, userProperties, "
-                            + "messageExpiryIntervalSeconds, correlationData, responseTopic, payloadFormat, contentType) "
+                            + "messageExpiryIntervalSeconds, correlationData,"
+                            + " responseTopic, payloadFormat, contentType) "
                             + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?);";
             Publish request = message.getRequest();
             try (PreparedStatement pstmt = dbConnection.prepareStatement(sqlString)) {
@@ -210,8 +222,9 @@ public class DiskSpoolDAO {
      * @throws SQLException when fails to remove a SpoolMessage by id
      */
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    public void removeSpoolMessageById(Long messageId) throws SQLException {
-        try (LockScope ignored = LockScope.lock(dbConnectionLock.writeLock())) {
+    public synchronized void removeSpoolMessageById(Long messageId) throws SQLException {
+        try (LockScope ignored = LockScope.lock(dbConnectionLock.readLock())) {
+            ensureConnection();
             String deleteSQL = "DELETE FROM spooler WHERE message_id = ?;";
             try (PreparedStatement pstmt = dbConnection.prepareStatement(deleteSQL)) {
                 pstmt.setLong(1, messageId);
@@ -232,14 +245,18 @@ public class DiskSpoolDAO {
         return DriverManager.getConnection(url);
     }
 
+    /**
+     * This method closes database connection.
+     * @throws SQLException when fails to close database connection.
+     */
     public void close() throws SQLException {
         try (LockScope ignored = LockScope.lock(dbConnectionLock.writeLock())) {
             if (dbConnection != null && !dbConnection.isClosed()) {
                 dbConnection.close();
-                dbConnection = null;
             }
         }
     }
+
     protected void setUpDatabase() throws SQLException {
         String tableCreationString = "CREATE TABLE IF NOT EXISTS spooler ("
                 + "message_id INTEGER PRIMARY KEY, "
@@ -291,19 +308,45 @@ public class DiskSpoolDAO {
         }
     }
 
+    /**
+     * This method checks for connection exists or not if not creates connection.
+     * @throws SQLException When fails to get Database Connection
+     */
+    synchronized void ensureConnection() throws SQLException {
+        if (dbConnection == null || dbConnection.isClosed()) {
+            try (LockScope ignored = LockScope.lock(dbConnectionLock.writeLock())) {
+                init();
+            }
+        }
+    }
+
+    boolean isConnectionHealthy(Connection dbConnection) {
+        try (Statement stmt = dbConnection.createStatement()) {
+            stmt.executeQuery("SELECT 1");
+            return true;
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
     void checkAndHandleCorruption(SQLException e) throws SQLException {
         if (e.getErrorCode() == SQLiteErrorCode.SQLITE_CORRUPT.code && recoverDBLock.tryLock()) {
-            try {
-                logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
-                close(); // Close corrupted connection
-                deleteIfExists(databasePath);  // Delete corrupted database file
-                init();  // Re-initialize the database connection
-                setUpDatabase();
-            } catch (IOException e2) {
-                throw new SQLException(e2);
-            } finally {
-                recoverDBLock.unlock();
-            }
+                try {
+                    if (dbConnectionLock.writeLock().tryLock()) {
+                        try {
+                            close();
+                            deleteIfExists(databasePath);
+                            init();
+                            setUpDatabase();
+                        } finally {
+                            dbConnectionLock.writeLock().unlock();
+                        }
+                    }
+                } catch (IOException e2) {
+                    throw new SQLException(e2);
+                } finally {
+                    recoverDBLock.unlock();
+                }
         }
     }
 }
