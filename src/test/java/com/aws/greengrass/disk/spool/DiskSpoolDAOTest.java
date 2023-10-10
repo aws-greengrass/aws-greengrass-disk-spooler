@@ -21,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -49,15 +50,22 @@ public class DiskSpoolDAOTest {
     private NucleusPaths paths;
 
     @AfterEach
-    public void cleanup() throws SQLException {
+    public void cleanup() throws SQLException, IOException {
         if (dbConnection != null && !dbConnection.isClosed()) {
             dbConnection.close();
         }
+        Path toBeDeleted = currDir.resolve("spooler.db").toAbsolutePath();
+        if (Files.exists(toBeDeleted)) {
+            Path tempPath = toBeDeleted.resolveSibling(toBeDeleted.getFileName() + ".toDelete");
+            Files.move(toBeDeleted, tempPath);
+            tempPath.toFile().deleteOnExit();
+        }
+
     }
 
     @Test
     void GIVEN_request_with_text_WHEN_operation_to_spool_fail_and_DB_corrupt_THEN_should_recover_DB()
-            throws SQLException, IOException, NoSuchFieldException, IllegalAccessException {
+            throws SQLException, IOException, NoSuchFieldException, IllegalAccessException, InterruptedException {
         SQLException sqlException = new SQLException("DB is corrupt", "some state", 11);
         lenient().when(paths.workPath(anyString())).thenReturn(currDir);
         lenient().when(dbConnection.prepareStatement(anyString())).thenReturn(preparedStatement);
@@ -80,6 +88,10 @@ public class DiskSpoolDAOTest {
 
         SpoolMessage spoolMessage = SpoolMessage.builder().id(1L).request(request).build();
         assertThrows(SQLException.class, () -> diskSpoolDAO.insertSpoolMessage(spoolMessage));
+        if (dbConnection != null) {
+            dbConnection.close();
+        }
+        Thread.sleep(1000);
         verify(diskSpoolDAO, times(1)).checkAndHandleCorruption(sqlException);
         assertDoesNotThrow(() ->diskSpoolDAO.insertSpoolMessage(spoolMessage));
     }
