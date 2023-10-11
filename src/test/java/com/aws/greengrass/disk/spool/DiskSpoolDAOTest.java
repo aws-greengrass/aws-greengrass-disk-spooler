@@ -10,7 +10,6 @@ import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
 import com.aws.greengrass.util.NucleusPaths;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -21,7 +20,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -49,19 +47,6 @@ public class DiskSpoolDAOTest {
     @Mock
     private NucleusPaths paths;
 
-    @AfterEach
-    public void cleanup() throws SQLException, IOException {
-        if (dbConnection != null && !dbConnection.isClosed()) {
-            dbConnection.close();
-        }
-        Path toBeDeleted = currDir.resolve("spooler.db").toAbsolutePath();
-        if (Files.exists(toBeDeleted)) {
-            Path tempPath = toBeDeleted.resolveSibling(toBeDeleted.getFileName() + ".toDelete");
-            Files.move(toBeDeleted, tempPath);
-            tempPath.toFile().deleteOnExit();
-        }
-
-    }
 
     @Test
     void GIVEN_request_with_text_WHEN_operation_to_spool_fail_and_DB_corrupt_THEN_should_recover_DB()
@@ -88,10 +73,6 @@ public class DiskSpoolDAOTest {
 
         SpoolMessage spoolMessage = SpoolMessage.builder().id(1L).request(request).build();
         assertThrows(SQLException.class, () -> diskSpoolDAO.insertSpoolMessage(spoolMessage));
-        if (dbConnection != null) {
-            dbConnection.close();
-        }
-        Thread.sleep(1000);
         verify(diskSpoolDAO, times(1)).checkAndHandleCorruption(sqlException);
         assertDoesNotThrow(() ->diskSpoolDAO.insertSpoolMessage(spoolMessage));
     }

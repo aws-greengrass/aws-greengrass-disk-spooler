@@ -334,16 +334,23 @@ public class DiskSpoolDAO {
             try {
                 logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
                 logger.atWarn().log("Attempting to close the database connection.");
-                close();
+                dbConnection.close();
+                if (dbConnection.isClosed()) {
+                    logger.atWarn().log("Confirmed: Database connection is truly closed.");
+                } else {
+                    logger.atError().log("Error: Database connection is NOT closed.");
+
+                }
                 logger.atWarn().log("Database connection closed.");
                 logger.atWarn().log("Attempting to delete the database file.");
+                Thread.sleep(5000);
                 deleteIfExists(databasePath);
                 logger.atWarn().log("Database file deleted.");
                 logger.atWarn().log("Initializing a new database connection.");
                 init();
                 logger.atWarn().log("Initialized a new database connection.");
                 setUpDatabase();
-            } catch (IOException e2) {
+            } catch (IOException | InterruptedException e2) {
                 throw new SQLException(e2);
             } finally {
                 recoverDBLock.unlock();
