@@ -249,7 +249,7 @@ public class DiskSpoolDAO {
      * This method closes database connection.
      * @throws SQLException when fails to close database connection.
      */
-    public void close() throws SQLException {
+    synchronized void close() throws SQLException {
         try (LockScope ignored = LockScope.lock(dbConnectionLock.writeLock())) {
             if (dbConnection != null && !dbConnection.isClosed()) {
                 dbConnection.close();
@@ -333,9 +333,15 @@ public class DiskSpoolDAO {
         if (e.getErrorCode() == SQLiteErrorCode.SQLITE_CORRUPT.code && recoverDBLock.tryLock()) {
             try {
                 logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
+                logger.atWarn().log("Attempting to close the database connection.");
                 close();
+                logger.atWarn().log("Database connection closed.");
+                logger.atWarn().log("Attempting to delete the database file.");
                 deleteIfExists(databasePath);
+                logger.atWarn().log("Database file deleted.");
+                logger.atWarn().log("Initializing a new database connection.");
                 init();
+                logger.atWarn().log("Initialized a new database connection.");
                 setUpDatabase();
             } catch (IOException e2) {
                 throw new SQLException(e2);
