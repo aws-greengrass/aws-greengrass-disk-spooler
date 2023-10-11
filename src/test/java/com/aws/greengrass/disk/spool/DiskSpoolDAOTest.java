@@ -64,6 +64,9 @@ public class DiskSpoolDAOTest {
         Field field = DiskSpoolDAO.class.getDeclaredField("dbConnection");
         field.setAccessible(true);
         field.set(diskSpoolDAO, dbConnection);
+        doNothing().when(diskSpoolDAO).close();
+        doNothing().when(diskSpoolDAO).init();
+
 
         String message = "Hello";
         Publish request =
