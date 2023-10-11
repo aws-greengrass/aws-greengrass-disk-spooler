@@ -153,7 +153,7 @@ public class DiskSpoolDAO {
      */
     @SuppressWarnings({"PMD.ExceptionAsFlowControl", "PMD.AvoidCatchingGenericException"})
     public synchronized void insertSpoolMessage(SpoolMessage message) throws SQLException {
-        try (LockScope ignored = LockScope.lock(dbConnectionLock.readLock())) {
+        try (LockScope ignored = LockScope.lock(dbConnectionLock.writeLock())) {
             ensureConnection();
             String sqlString =
                     "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload, userProperties, "
@@ -331,22 +331,17 @@ public class DiskSpoolDAO {
 
     void checkAndHandleCorruption(SQLException e) throws SQLException {
         if (e.getErrorCode() == SQLiteErrorCode.SQLITE_CORRUPT.code && recoverDBLock.tryLock()) {
-                try {
-                    if (dbConnectionLock.writeLock().tryLock()) {
-                        try {
-                            close();
-                            deleteIfExists(databasePath);
-                            init();
-                            setUpDatabase();
-                        } finally {
-                            dbConnectionLock.writeLock().unlock();
-                        }
-                    }
-                } catch (IOException e2) {
-                    throw new SQLException(e2);
-                } finally {
-                    recoverDBLock.unlock();
-                }
+            try {
+                logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
+                close();
+                deleteIfExists(databasePath);
+                init();
+                setUpDatabase();
+            } catch (IOException e2) {
+                throw new SQLException(e2);
+            } finally {
+                recoverDBLock.unlock();
+            }
         }
     }
 }
