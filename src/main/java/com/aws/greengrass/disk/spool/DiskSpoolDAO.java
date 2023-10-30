@@ -63,6 +63,11 @@ public class DiskSpoolDAO {
         url = String.format(DATABASE_CONNECTION_URL, databasePath);
     }
 
+    DiskSpoolDAO(Path path) {
+        databasePath = path;
+        url = String.format(DATABASE_CONNECTION_URL, path);
+    }
+
     /**
      * This method will query the existing database for the existing queue of MQTT request Ids
      * and return them in order.
