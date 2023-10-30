@@ -257,6 +257,7 @@ class DiskSpoolIntegrationTest {
         assertPayloadByMessageIdEquals(3L, payload3);
     }
 
+    @SuppressWarnings("PMD.DetachedTestCase")
     void startNucleus() throws InterruptedException, IOException {
         System.setProperty("aws.greengrass.scanSelfClasspath", "true");
         startKernelWithConfig();
