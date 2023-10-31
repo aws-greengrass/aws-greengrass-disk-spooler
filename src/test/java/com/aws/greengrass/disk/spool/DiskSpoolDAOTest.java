@@ -9,12 +9,16 @@ import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
+import com.aws.greengrass.util.CrashableFunction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.charset.StandardCharsets;
@@ -26,17 +30,50 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
+import java.util.stream.Stream;
 
 import static com.aws.greengrass.testcommons.testutilities.ExceptionLogProtector.ignoreExceptionOfType;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith({GGExtension.class, MockitoExtension.class})
 class DiskSpoolDAOTest {
+
+    private static final CrashableFunction<DiskSpoolDAO, Void, SQLException> OPERATION_INSERT_SPOOL_MESSAGE = dao -> {
+        dao.insertSpoolMessage(SpoolMessage.builder()
+                .id(1L)
+                .request(Publish.builder()
+                        .topic("spool")
+                        .payload("Hello".getBytes(StandardCharsets.UTF_8))
+                        .qos(QOS.AT_LEAST_ONCE)
+                        .messageExpiryIntervalSeconds(2L)
+                        .payloadFormat(Publish.PayloadFormatIndicator.BYTES)
+                        .contentType("Test")
+                        .build())
+                .build());
+        return null;
+    };
+
+    private static final CrashableFunction<DiskSpoolDAO, Void, SQLException> OPERATION_GET_ALL_SPOOL_MESSAGE_IDS = dao -> {
+        dao.getAllSpoolMessageIds();
+        return null;
+    };
+
+    private static final CrashableFunction<DiskSpoolDAO, Void, SQLException> OPERATION_GET_SPOOL_MESSAGE_BY_ID = dao -> {
+        dao.getSpoolMessageById(0L);
+        return null;
+    };
+
+    private static final CrashableFunction<DiskSpoolDAO, Void, SQLException> OPERATION_REMOVE_SPOOL_MESSAGE_BY_ID = dao -> {
+        dao.removeSpoolMessageById(0L);
+        return null;
+    };
+
     @TempDir
     Path currDir;
     DiskSpoolDAOFake dao;
@@ -94,43 +131,41 @@ class DiskSpoolDAOTest {
         }
     }
 
-    @Test
-    void GIVEN_request_with_text_WHEN_operation_to_spool_fail_and_DB_corrupt_THEN_should_recover_DB() throws SQLException {
-        SQLException sqlException = new SQLException("DB is corrupt", "some state", 11);
-        dao.getConnection().addExceptionOnUpdate(sqlException);
-
-        Publish request = Publish.builder()
-                .topic("spool")
-                .payload("Hello".getBytes(StandardCharsets.UTF_8))
-                .qos(QOS.AT_LEAST_ONCE)
-                .messageExpiryIntervalSeconds(2L)
-                .payloadFormat(Publish.PayloadFormatIndicator.BYTES)
-                .contentType("Test")
-                .build();
-
-        SpoolMessage spoolMessage = SpoolMessage.builder().id(1L).request(request).build();
-        assertThrows(SQLException.class, () -> dao.insertSpoolMessage(spoolMessage));
-        verify(dao).checkAndHandleCorruption(sqlException);
-        dao.insertSpoolMessage(spoolMessage);
+    @ParameterizedTest
+    @MethodSource("corruptionDetectingSpoolerOperations")
+    void GIVEN_spooler_WHEN_corruption_detected_during_operation_THEN_spooler_recovers(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation) throws SQLException {
+        SQLException corruptionException = new SQLException("DB is corrupt", "some state", 11);
+        dao.getConnection().addExceptionOnUpdate(corruptionException);
+        assertThrows(SQLException.class, () -> operation.apply(dao));
+        verify(dao).checkAndHandleCorruption(corruptionException);
+        operation.apply(dao);
     }
 
-    @Test
-    void GIVEN_request_with_text_WHEN_operation_to_spool_fail_and_transient_error_THEN_should_retry(ExtensionContext context) throws SQLException {
+    @ParameterizedTest
+    @MethodSource("allSpoolerOperations")
+    void GIVEN_spooler_WHEN_transient_error_during_operation_THEN_operation_retried(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation, ExtensionContext context) throws SQLException {
         ignoreExceptionOfType(context, SQLTransientException.class);
-        SQLException sqlException = new SQLTransientException("Some Transient Error");
-        dao.getConnection().addExceptionOnUpdate(sqlException);
-        dao.getConnection().addExceptionOnUpdate(sqlException);
+        SQLException transientException = new SQLTransientException("Some Transient Error");
+        dao.getConnection().addExceptionOnUpdate(transientException);
+        dao.getConnection().addExceptionOnUpdate(transientException);
+        operation.apply(dao);
+        verify(dao, never()).checkAndHandleCorruption(transientException);
+    }
 
-        Publish request = Publish.builder()
-                .topic("spool")
-                .payload("Hello".getBytes(StandardCharsets.UTF_8))
-                .qos(QOS.AT_LEAST_ONCE)
-                .messageExpiryIntervalSeconds(2L)
-                .payloadFormat(Publish.PayloadFormatIndicator.BYTES)
-                .contentType("Test")
-                .build();
+    public static Stream<Arguments> corruptionDetectingSpoolerOperations() {
+        return Stream.of(
+                Arguments.of(OPERATION_INSERT_SPOOL_MESSAGE),
+                Arguments.of(OPERATION_GET_ALL_SPOOL_MESSAGE_IDS),
+                Arguments.of(OPERATION_GET_SPOOL_MESSAGE_BY_ID)
+        );
+    }
 
-        SpoolMessage spoolMessage = SpoolMessage.builder().id(1L).request(request).build();
-        dao.insertSpoolMessage(spoolMessage);
+    public static Stream<Arguments> allSpoolerOperations() {
+        return Stream.of(
+                Arguments.of(OPERATION_INSERT_SPOOL_MESSAGE),
+                Arguments.of(OPERATION_GET_ALL_SPOOL_MESSAGE_IDS),
+                Arguments.of(OPERATION_GET_SPOOL_MESSAGE_BY_ID),
+                Arguments.of(OPERATION_REMOVE_SPOOL_MESSAGE_BY_ID)
+        );
     }
 }

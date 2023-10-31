@@ -11,21 +11,21 @@ import lombok.experimental.Delegate;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.LinkedList;
 import java.util.Queue;
 
 public class ConnectionFake implements Connection {
 
-    // exceptions to throw on executeUpdate
-    private final Queue<SQLException> throwOnUpdate = new LinkedList<>();
+    private final Queue<SQLException> throwOnExecute = new LinkedList<>();
 
     @Setter
     @Delegate(excludes = ConnectionExcludes.class)
     private volatile Connection connection;
 
     public void addExceptionOnUpdate(SQLException exception) {
-        throwOnUpdate.add(exception);
+        throwOnExecute.add(exception);
     }
 
     @Override
@@ -66,12 +66,20 @@ public class ConnectionFake implements Connection {
 
         @Override
         public int executeUpdate() throws SQLException {
-            // for testing, choose to intercept update and throw an exception
-            SQLException err = throwOnUpdate.poll();
+            SQLException err = throwOnExecute.poll();
             if (err != null) {
                 throw err;
             }
             return statement.executeUpdate();
+        }
+
+        @Override
+        public ResultSet executeQuery() throws SQLException {
+            SQLException err = throwOnExecute.poll();
+            if (err != null) {
+                throw err;
+            }
+            return statement.executeQuery();
         }
     }
 
@@ -87,5 +95,6 @@ public class ConnectionFake implements Connection {
 
     interface PreparedStatementExcludes {
         int executeUpdate() throws SQLException;
+        ResultSet executeQuery() throws SQLException;
     }
 }
