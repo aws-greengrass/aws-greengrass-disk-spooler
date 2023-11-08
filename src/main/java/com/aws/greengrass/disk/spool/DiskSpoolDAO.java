@@ -249,7 +249,7 @@ public class DiskSpoolDAO {
                     .retain(rs.getBoolean("retain"))
                     .topic(rs.getString("topic"))
                     .payload(rs.getBytes("payload"))
-                    .payloadFormat(rs.getObject("messageExpiryIntervalSeconds") == null
+                    .payloadFormat(rs.getObject("payloadFormat") == null
                             ? null : Publish.PayloadFormatIndicator.fromInt(rs.getInt("payloadFormat")))
                     .messageExpiryIntervalSeconds(rs.getObject("messageExpiryIntervalSeconds") == null
                             ? null : rs.getLong("messageExpiryIntervalSeconds"))
