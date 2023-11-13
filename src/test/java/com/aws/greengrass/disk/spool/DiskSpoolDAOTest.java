@@ -78,7 +78,7 @@ class DiskSpoolDAOTest {
     DiskSpoolDAOFake dao;
 
     @BeforeEach
-    void setUp() throws SQLException, InterruptedException {
+    void setUp() throws SQLException {
         dao = spy(new DiskSpoolDAOFake(currDir.resolve("spooler.db")));
         dao.initialize();
         dao.setUpDatabase();
@@ -92,7 +92,7 @@ class DiskSpoolDAOTest {
     }
 
     @Test
-    void GIVEN_empty_spooler_WHEN_messages_added_and_removed_from_spooler_THEN_success() throws SQLException, InterruptedException {
+    void GIVEN_empty_spooler_WHEN_messages_added_and_removed_from_spooler_THEN_success() throws SQLException {
         List<Long> messageIds = LongStream.range(0, 100L).boxed().collect(Collectors.toList());
 
         // fill db with messages
@@ -131,23 +131,23 @@ class DiskSpoolDAOTest {
 
     @ParameterizedTest
     @MethodSource("allSpoolerOperations")
-    void GIVEN_spooler_WHEN_corruption_detected_during_operation_THEN_spooler_recovers(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation) throws SQLException, InterruptedException {
+    void GIVEN_spooler_WHEN_corruption_detected_during_operation_THEN_spooler_recovers(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation) throws SQLException {
         SQLException corruptionException = new SQLException("DB is corrupt", "some state", 11);
         dao.getConnection().addExceptionOnUpdate(corruptionException);
         assertThrows(SQLException.class, () -> operation.apply(dao));
-        verify(dao).checkAndHandleCorruption(corruptionException);
+        verify(dao).recoverFromCorruption();
         operation.apply(dao);
     }
 
     @ParameterizedTest
     @MethodSource("allSpoolerOperations")
-    void GIVEN_spooler_WHEN_transient_error_during_operation_THEN_operation_retried(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation, ExtensionContext context) throws SQLException, InterruptedException {
+    void GIVEN_spooler_WHEN_error_during_operation_THEN_exception_thrown(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation, ExtensionContext context) throws SQLException {
         ignoreExceptionOfType(context, SQLTransientException.class);
         SQLException transientException = new SQLTransientException("Some Transient Error");
         dao.getConnection().addExceptionOnUpdate(transientException);
         dao.getConnection().addExceptionOnUpdate(transientException);
-        operation.apply(dao);
-        verify(dao, never()).checkAndHandleCorruption(transientException);
+        assertThrows(SQLException.class, () -> operation.apply(dao));
+        verify(dao, never()).recoverFromCorruption();
     }
 
     public static Stream<Arguments> allSpoolerOperations() {

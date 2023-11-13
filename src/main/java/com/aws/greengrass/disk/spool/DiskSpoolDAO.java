@@ -14,7 +14,6 @@ import com.aws.greengrass.mqttclient.v5.UserProperty;
 import com.aws.greengrass.util.CrashableFunction;
 import com.aws.greengrass.util.LockScope;
 import com.aws.greengrass.util.NucleusPaths;
-import com.aws.greengrass.util.RetryUtils;
 import com.aws.greengrass.util.SerializerFactory;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,12 +27,9 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.SQLTransientException;
 import java.sql.Statement;
 import java.sql.Types;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -48,13 +44,6 @@ public class DiskSpoolDAO {
 
     private static final Logger logger = LogManager.getLogger(DiskSpoolDAO.class);
     private static final ObjectMapper MAPPER = SerializerFactory.getFailSafeJsonObjectMapper();
-    private static final RetryUtils.RetryConfig sqlStatementRetryConfig =
-            RetryUtils.RetryConfig.builder()
-                    .initialRetryInterval(Duration.ofMillis(1L))
-                    .maxRetryInterval(Duration.ofMillis(500L))
-                    .maxAttempt(3)
-                    .retryableExceptions(Collections.singletonList(SQLTransientException.class))
-                    .build();
     protected static final String DATABASE_CONNECTION_URL = "jdbc:sqlite:%s";
     protected static final String DATABASE_FILE_NAME = "spooler.db";
     private static final Set<Integer> CORRUPTION_ERROR_CODES = new HashSet<>();
@@ -121,16 +110,15 @@ public class DiskSpoolDAO {
      *
      * @return ordered list of the existing ids in the persistent queue
      * @throws SQLException         when fails to get SpoolMessage IDs
-     * @throws InterruptedException if interrupted during execution
      */
-    public Iterable<Long> getAllSpoolMessageIds() throws SQLException, InterruptedException {
+    public Iterable<Long> getAllSpoolMessageIds() throws SQLException {
         // TODO don't recreate prepared statements every time
         return performSqlOperation(conn -> {
             try (PreparedStatement stmt = getAllSpoolMessageIdsStatement(conn);
                  ResultSet rs = stmt.executeQuery()) {
                 return getIdsFromRs(rs);
             }
-        }, "get-all-spool-message-ids");
+        });
     }
 
     private PreparedStatement getAllSpoolMessageIdsStatement(Connection conn) throws SQLException {
@@ -144,9 +132,8 @@ public class DiskSpoolDAO {
      * @param messageId the id of the SpoolMessage
      * @return SpoolMessage
      * @throws SQLException         when fails to get a SpoolMessage by id
-     * @throws InterruptedException if interrupted during execution
      */
-    public SpoolMessage getSpoolMessageById(long messageId) throws SQLException, InterruptedException {
+    public SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
         return performSqlOperation(conn -> {
             try (PreparedStatement pstmt = getSpoolMessageByIdStatement(conn, messageId);
                  ResultSet rs = pstmt.executeQuery()) {
@@ -156,7 +143,7 @@ public class DiskSpoolDAO {
                     throw new SQLException(e);
                 }
             }
-        }, "get-spool-message-by-id");
+        });
     }
 
     private PreparedStatement getSpoolMessageByIdStatement(Connection conn, long messageId) throws SQLException {
@@ -172,14 +159,13 @@ public class DiskSpoolDAO {
      *
      * @param message instance of SpoolMessage
      * @throws SQLException         when fails to insert SpoolMessage in the database
-     * @throws InterruptedException if interrupted during execution
      */
-    public void insertSpoolMessage(SpoolMessage message) throws SQLException, InterruptedException {
+    public void insertSpoolMessage(SpoolMessage message) throws SQLException {
         performSqlOperation(conn -> {
             try (PreparedStatement pstmt = insertSpoolMessageStatement(conn, message)) {
                 return pstmt.executeUpdate();
             }
-        }, "insert-spool-message");
+        });
     }
 
     private PreparedStatement insertSpoolMessageStatement(Connection conn, SpoolMessage message) throws SQLException {
@@ -241,14 +227,13 @@ public class DiskSpoolDAO {
      *
      * @param messageId the id of the SpoolMessage
      * @throws SQLException         when fails to remove a SpoolMessage by id
-     * @throws InterruptedException if interrupted during execution
      */
-    public void removeSpoolMessageById(Long messageId) throws SQLException, InterruptedException {
+    public void removeSpoolMessageById(Long messageId) throws SQLException {
         performSqlOperation(conn -> {
             try (PreparedStatement pstmt = removeSpoolMessageByIdStatement(conn, messageId)) {
                 return pstmt.executeUpdate();
             }
-        }, "remove-spool-message-by-id");
+        });
     }
 
     private PreparedStatement removeSpoolMessageByIdStatement(Connection conn, long messageId) throws SQLException {
@@ -268,7 +253,7 @@ public class DiskSpoolDAO {
         return DriverManager.getConnection(url);
     }
 
-    protected void setUpDatabase() throws SQLException, InterruptedException {
+    protected void setUpDatabase() throws SQLException {
         String query = "CREATE TABLE IF NOT EXISTS spooler ("
                 + "message_id INTEGER PRIMARY KEY, "
                 + "retried INTEGER NOT NULL, "
@@ -290,38 +275,26 @@ public class DiskSpoolDAO {
                 st.executeUpdate(query);
                 return null;
             }
-        }, "create-spooler-table");
+        });
     }
 
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    private <T> T performSqlOperation(CrashableFunction<Connection, T, SQLException> operation,
-                                      String operationName) throws InterruptedException, SQLException {
+    private <T> T performSqlOperation(CrashableFunction<Connection, T, SQLException> operation) throws SQLException {
         try {
-            return RetryUtils.runWithRetry(
-                    sqlStatementRetryConfig,
-                    () -> {
-                        try (LockScope ls = LockScope.lock(connectionLock.readLock())) {
-                            return operation.apply(connection);
-                        }
-                    },
-                    operationName,
-                    logger
-            );
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw e;
+            try (LockScope ls = LockScope.lock(connectionLock.readLock())) {
+                return operation.apply(connection);
+            }
         } catch (SQLException e) {
-            checkAndHandleCorruption(e);
+            if (CORRUPTION_ERROR_CODES.contains(e.getErrorCode())) {
+                recoverFromCorruption();
+            }
             throw e;
         } catch (Exception e) {
             throw new SQLException(e);
         }
     }
 
-    void checkAndHandleCorruption(SQLException e) throws SQLException, InterruptedException {
-        if (!CORRUPTION_ERROR_CODES.contains(e.getErrorCode())) {
-            return;
-        }
+    void recoverFromCorruption() throws SQLException {
         if (!recoverDBLock.tryLock()) {
             // corruption recovery in progress
             return;

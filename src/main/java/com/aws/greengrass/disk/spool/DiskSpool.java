@@ -37,12 +37,9 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
      * @return payload of the MQTT message stored with id
      */
     @Override
-    public SpoolMessage getMessageById(long id) { // TODO support InterruptedException in interface
+    public SpoolMessage getMessageById(long id) {
         try {
             return dao.getSpoolMessageById(id);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return null;
         } catch (SQLException e) {
             logger.atError()
                     .kv(KV_MESSAGE_ID, id)
@@ -62,7 +59,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
         try {
             dao.removeSpoolMessageById(id);
             logger.atTrace().kv(KV_MESSAGE_ID, id).log("Removed message from Disk Spooler");
-        } catch (SQLException | InterruptedException e) { // TODO support InterruptedException in interface
+        } catch (SQLException e) {
             logger.atWarn()
                     .kv(KV_MESSAGE_ID, id)
                     .cause(e)
@@ -80,7 +77,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
         try {
             dao.insertSpoolMessage(message);
             logger.atTrace().kv(KV_MESSAGE_ID, id).log("Added message to Disk Spooler");
-        } catch (SQLException | InterruptedException e) { // TODO support InterruptedException in interface
+        } catch (SQLException e) {
             throw new IOException(e);
         }
     }
@@ -89,7 +86,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public Iterable<Long> getAllMessageIds() throws IOException {
         try {
             return dao.getAllSpoolMessageIds();
-        } catch (SQLException | InterruptedException e) {
+        } catch (SQLException e) {
             throw new IOException(e);
         }
     }
@@ -100,7 +97,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
             dao.initialize();
             dao.setUpDatabase();
             logger.atInfo().log("Finished setting up Database");
-        } catch (SQLException | InterruptedException e) { // TODO support InterruptedException in interface
+        } catch (SQLException e) {
             throw new IOException(e);
         }
     }
