@@ -50,8 +50,8 @@ public class DiskSpoolDAO {
     private static final ObjectMapper MAPPER = SerializerFactory.getFailSafeJsonObjectMapper();
     private static final RetryUtils.RetryConfig sqlStatementRetryConfig =
             RetryUtils.RetryConfig.builder()
-                    .initialRetryInterval(Duration.ofSeconds(1L))
-                    .maxRetryInterval(Duration.ofSeconds(3L))
+                    .initialRetryInterval(Duration.ofMillis(1L))
+                    .maxRetryInterval(Duration.ofMillis(500L))
                     .maxAttempt(3)
                     .retryableExceptions(Collections.singletonList(SQLTransientException.class))
                     .build();
