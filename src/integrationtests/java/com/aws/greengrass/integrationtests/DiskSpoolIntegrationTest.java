@@ -39,7 +39,6 @@ import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import static java.nio.file.Files.deleteIfExists;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -67,8 +66,8 @@ class DiskSpoolIntegrationTest {
     }
 
     @AfterEach
-    void afterEach() throws IOException {
-        stopNucleus(true);
+    void afterEach() {
+        kernel.shutdown();
     }
 
     @Test
@@ -184,7 +183,7 @@ class DiskSpoolIntegrationTest {
         spooler.addMessage(publishRequestFromPayload(payload3));
 
         // restart nucleus
-        stopNucleus(false);
+        kernel.shutdown();
         startNucleus();
 
         // Read messages
@@ -265,16 +264,6 @@ class DiskSpoolIntegrationTest {
                 .workPath(DiskSpool.PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
         diskSpool = kernel.getContext().get(DiskSpool.class);
         spooler = new Spool(kernel.getContext().get(DeviceConfiguration.class), kernel);
-    }
-
-    void stopNucleus(boolean clearSpoolDb) throws IOException {
-        try {
-            if (clearSpoolDb) {
-                deleteIfExists(spoolerDatabaseFile);
-            }
-        } finally {
-            kernel.shutdown();
-        }
     }
 
     private void startKernelWithConfig() throws InterruptedException {
