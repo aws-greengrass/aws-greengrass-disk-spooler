@@ -17,6 +17,7 @@ import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.mqttclient.v5.UserProperty;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
+import com.aws.greengrass.util.Utils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -243,8 +244,7 @@ class DiskSpoolIntegrationTest {
 
         // Corrupt Database
         try (RandomAccessFile f = new RandomAccessFile(spoolerDatabaseFile.toFile(), "rw")) {
-            f.seek(100);
-            f.writeBytes("Garbage");
+            f.writeBytes(Utils.generateRandomString(256));
         }
 
         // Fail to add second message
