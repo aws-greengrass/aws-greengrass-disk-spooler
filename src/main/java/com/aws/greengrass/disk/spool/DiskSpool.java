@@ -104,4 +104,10 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
             throw new IOException(e);
         }
     }
+
+    @Override
+    protected void shutdown() throws InterruptedException {
+        super.shutdown();
+        dao.close();
+    }
 }
