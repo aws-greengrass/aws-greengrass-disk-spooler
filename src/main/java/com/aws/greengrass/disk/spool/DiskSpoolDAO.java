@@ -104,7 +104,7 @@ public class DiskSpoolDAO {
      * Close DAO resources.
      */
     public void close() {
-        try (LockScope ls = LockScope.lock(connectionLock.readLock())) {
+        try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
             if (connection != null) {
                 try {
                     connection.close();
