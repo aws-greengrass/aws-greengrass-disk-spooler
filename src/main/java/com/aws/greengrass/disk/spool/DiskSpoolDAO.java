@@ -37,6 +37,8 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.inject.Inject;
 
 import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
@@ -62,11 +64,8 @@ public class DiskSpoolDAO {
     private final GetSpoolMessageById getSpoolMessageById = new GetSpoolMessageById();
     private final InsertSpoolMessage insertSpoolMessage = new InsertSpoolMessage();
     private final RemoveSpoolMessageById removeSpoolMessageById = new RemoveSpoolMessageById();
-
-    /**
-     * Statements that will automatically be recreated when a new database connection is made.
-     */
-    private final List<CachedStatement<?,?>> statementsToRecreate = Arrays.asList(
+    private final List<CachedStatement<?,?>> allStatements = Arrays.asList(
+            createSpoolerTable,
             getAllSpoolMessageIds,
             getSpoolMessageById,
             insertSpoolMessage,
@@ -105,12 +104,15 @@ public class DiskSpoolDAO {
             connection = createConnection();
 
             // recreate the database table first
-            createSpoolerTable.createStatement(connection);
+            createSpoolerTable.replaceStatement(connection);
             createSpoolerTable.execute();
 
             // eagerly create remaining statements
-            for (CachedStatement<?, ?> statement : statementsToRecreate) {
-                statement.createStatement(connection);
+            for (CachedStatement<?, ?> statement : allStatements) {
+                if (statement == createSpoolerTable) {
+                    continue;
+                }
+                statement.replaceStatement(connection);
             }
         }
     }
@@ -120,6 +122,15 @@ public class DiskSpoolDAO {
      */
     public void close() {
         try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
+            for (CachedStatement<?, ?> statement : allStatements) {
+                try {
+                    statement.close();
+                } catch (SQLException e) {
+                    LOGGER.atWarn()
+                            .kv("statement", statement.getClass().getSimpleName())
+                            .log("Unable to close statement");
+                }
+            }
             if (connection != null) {
                 try {
                     connection.close();
@@ -213,7 +224,7 @@ public class DiskSpoolDAO {
         private static final String QUERY = "SELECT message_id FROM spooler;";
 
         @Override
-        protected PreparedStatement doCreateStatement(Connection connection) throws SQLException {
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
             return connection.prepareStatement(QUERY);
         }
 
@@ -238,7 +249,7 @@ public class DiskSpoolDAO {
                         + "FROM spooler WHERE message_id = ?;";
 
         @Override
-        protected PreparedStatement doCreateStatement(Connection connection) throws SQLException {
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
             return connection.prepareStatement(QUERY);
         }
 
@@ -288,7 +299,7 @@ public class DiskSpoolDAO {
                         + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?);";
 
         @Override
-        protected PreparedStatement doCreateStatement(Connection connection) throws SQLException {
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
             return connection.prepareStatement(QUERY);
         }
 
@@ -352,7 +363,7 @@ public class DiskSpoolDAO {
         private static final String QUERY = "DELETE FROM spooler WHERE message_id = ?;";
 
         @Override
-        protected PreparedStatement doCreateStatement(Connection connection) throws SQLException {
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
             return connection.prepareStatement(QUERY);
         }
 
@@ -386,7 +397,7 @@ public class DiskSpoolDAO {
                 + ");";
 
         @Override
-        protected PreparedStatement doCreateStatement(Connection connection) throws SQLException {
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
             return connection.prepareStatement(QUERY);
         }
 
@@ -394,18 +405,10 @@ public class DiskSpoolDAO {
         protected Integer doExecute(PreparedStatement statement) throws SQLException {
             return statement.executeUpdate();
         }
-
-        @Override
-        public void createStatement(Connection connection) throws SQLException {
-            super.createStatement(connection);
-            execute();
-        }
     }
 
     /**
      * A {@link Statement} wrapper that reuses the statement across executions.
-     * The statement is automatically recreated if underlying {@link Connection}
-     * is changed.
      *
      * @param <T> statement type
      * @param <R> execution result type
@@ -414,14 +417,14 @@ public class DiskSpoolDAO {
         private T statement;
 
         /**
-         * Create a new statement.
+         * Create a new statement and replace the existing one, if present.
          *
          * @param connection connection
          * @throws SQLException if unable to create statement
          */
-        public void createStatement(Connection connection) throws SQLException {
+        public void replaceStatement(Connection connection) throws SQLException {
             close(); // clean up old resources
-            statement = doCreateStatement(connection);
+            statement = createStatement(connection);
         }
 
         /**
@@ -431,7 +434,7 @@ public class DiskSpoolDAO {
          * @return statement
          * @throws SQLException if unable to create statement
          */
-        protected abstract T doCreateStatement(Connection connection) throws SQLException;
+        protected abstract T createStatement(Connection connection) throws SQLException;
 
         public void close() throws SQLException {
             if (statement != null) {
