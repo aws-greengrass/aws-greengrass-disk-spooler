@@ -42,10 +42,11 @@ import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
 
 public class DiskSpoolDAO {
 
-    private static final Logger logger = LogManager.getLogger(DiskSpoolDAO.class);
+    private static final Logger LOGGER = LogManager.getLogger(DiskSpoolDAO.class);
     private static final ObjectMapper MAPPER = SerializerFactory.getFailSafeJsonObjectMapper();
-    protected static final String DATABASE_CONNECTION_URL = "jdbc:sqlite:%s";
-    protected static final String DATABASE_FILE_NAME = "spooler.db";
+    private static final String DATABASE_CONNECTION_URL = "jdbc:sqlite:%s";
+    private static final String DATABASE_FILE_NAME = "spooler.db";
+    private static final String KV_URL = "url";
     private static final Set<Integer> CORRUPTION_ERROR_CODES = new HashSet<>();
 
     static {
@@ -56,21 +57,21 @@ public class DiskSpoolDAO {
     private final Path databasePath;
     private final String url;
     private final List<CrashableFunction<Connection, Void, SQLException>> onNewConnection = new ArrayList<>();
-    @SuppressWarnings("PMD.UnusedPrivateField") // runs whenever a new db connection is made
+    @SuppressWarnings("PMD.UnusedPrivateField") // runs whenever a new database connection is made
     private final CreateSpoolerTable createSpoolerTable = new CreateSpoolerTable();
-    private final GetAllSpoolMessageIds getAllSpoolMessageIdsStatement = new GetAllSpoolMessageIds();
-    private final GetSpoolMessageById getSpoolMessageByIdStatement = new GetSpoolMessageById();
-    private final InsertSpoolMessage insertSpoolMessageStatement = new InsertSpoolMessage();
-    private final RemoveSpoolMessageById removeSpoolMessageByIdStatement = new RemoveSpoolMessageById();
+    private final GetAllSpoolMessageIds getAllSpoolMessageIds = new GetAllSpoolMessageIds();
+    private final GetSpoolMessageById getSpoolMessageById = new GetSpoolMessageById();
+    private final InsertSpoolMessage insertSpoolMessage = new InsertSpoolMessage();
+    private final RemoveSpoolMessageById removeSpoolMessageById = new RemoveSpoolMessageById();
     private final ReentrantLock recoverDBLock = new ReentrantLock();
     private final ReentrantReadWriteLock connectionLock = new ReentrantReadWriteLock();
     private Connection connection;
 
     /**
-     * This method will construct the database path.
+     * Create a new DiskSpoolDAO.
      *
-     * @param paths The path to the working directory
-     * @throws IOException when fails to set up the database
+     * @param paths nucleus paths
+     * @throws IOException if unable to resolve database path
      */
     @Inject
     public DiskSpoolDAO(NucleusPaths paths) throws IOException {
@@ -86,21 +87,24 @@ public class DiskSpoolDAO {
     /**
      * Initialize the database connection.
      *
-     * @throws SQLException if db is unable to be created
+     * @throws SQLException if database is unable to be created
      */
     public void initialize() throws SQLException {
         try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
             close();
-            logger.atDebug().kv("url", url).log("Creating DB connection");
             connection = createConnection();
-            for (CrashableFunction<Connection, Void, SQLException> handler : onNewConnection) {
-                handler.apply(connection);
-            }
+            fireOnNewConnection();
+        }
+    }
+
+    private void fireOnNewConnection() throws SQLException {
+        for (CrashableFunction<Connection, Void, SQLException> handler : onNewConnection) {
+            handler.apply(connection);
         }
     }
 
     /**
-     * Close DAO resources.
+     * Close any open DAO resources, including database connections.
      */
     public void close() {
         try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
@@ -108,69 +112,67 @@ public class DiskSpoolDAO {
                 try {
                     connection.close();
                 } catch (SQLException e) {
-                    logger.atWarn().kv("url", url).log("Unable to close pre-existing connection");
+                    LOGGER.atWarn().kv(KV_URL, url).log("Unable to close pre-existing connection");
                 }
             }
         }
     }
 
     /**
-     * This method will query the existing database for the existing queue of MQTT request Ids
-     * and return them in order.
+     * Get ids of all messages from the database.
      *
-     * @return ordered list of the existing ids in the persistent queue
-     * @throws SQLException when fails to get SpoolMessage IDs
+     * @return ordered iterable of message ids
+     * @throws SQLException if statement failed to execute, or when unable to read results
      */
     public Iterable<Long> getAllSpoolMessageIds() throws SQLException {
-        try (ResultSet rs = getAllSpoolMessageIdsStatement.execute()) {
-            return getAllSpoolMessageIdsStatement.mapResultToIds(rs);
+        try (ResultSet rs = getAllSpoolMessageIds.execute()) {
+            return getAllSpoolMessageIds.mapResultToIds(rs);
         }
     }
 
     /**
-     * This method will query a SpoolMessage and return it given an id.
+     * Get a single message by id from the database.
      *
-     * @param messageId the id of the SpoolMessage
-     * @return SpoolMessage
-     * @throws SQLException when fails to get a SpoolMessage by id
+     * @param id message id
+     * @return  message
+     * @throws SQLException if statement failed to execute, or when unable to read results
      */
-    public SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
-        try (ResultSet rs = getSpoolMessageByIdStatement.executeWithParameters(messageId)) {
-            try {
-                return getSpoolMessageByIdStatement.mapResultToMessage(messageId, rs);
-            } catch (IOException e) {
-                throw new SQLException(e);
-            }
+    public SpoolMessage getSpoolMessageById(long id) throws SQLException {
+        try (ResultSet rs = getSpoolMessageById.executeWithParameters(id)) {
+            return getSpoolMessageById.mapResultToMessage(id, rs);
+        } catch (IOException e) {
+            throw new SQLException(e);
         }
     }
 
     /**
-     * This method will insert a SpoolMessage into the database.
+     * Insert a message into the database.
      *
-     * @param message instance of SpoolMessage
-     * @throws SQLException when fails to insert SpoolMessage in the database
+     * @param message message
+     * @throws SQLException if statement failed to execute
      */
     public void insertSpoolMessage(SpoolMessage message) throws SQLException {
-        insertSpoolMessageStatement.executeWithParameters(message);
+        insertSpoolMessage.executeWithParameters(message);
     }
 
     /**
-     * This method will remove a SpoolMessage from the database given its id.
+     * Remove a message by id from the database.
      *
-     * @param messageId the id of the SpoolMessage
-     * @throws SQLException when fails to remove a SpoolMessage by id
+     * @param id message id
+     * @throws SQLException if statement failed to execute
      */
-    public void removeSpoolMessageById(Long messageId) throws SQLException {
-        removeSpoolMessageByIdStatement.executeWithParameters(messageId);
+    public void removeSpoolMessageById(Long id) throws SQLException {
+        removeSpoolMessageById.executeWithParameters(id);
     }
 
     /**
-     * This method creates a connection instance of the SQLite database.
+     * Create a new database connection.
      *
-     * @return Connection for SQLite database instance
-     * @throws SQLException When fails to get Database Connection
+     * @return connection
+     * @throws SQLException if database access error occurs
      */
     protected Connection createConnection() throws SQLException {
+        LOGGER.atDebug().kv(KV_URL, url).log("Creating database connection");
         return DriverManager.getConnection(url);
     }
 
@@ -182,7 +184,7 @@ public class DiskSpoolDAO {
 
         // hold connection lock throughout recovery to prevent incoming operations from executing
         try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
-            logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
+            LOGGER.atWarn().kv(KV_URL, url).log("Database is corrupted, creating new database");
             close();
             try {
                 Files.deleteIfExists(databasePath);
@@ -199,8 +201,8 @@ public class DiskSpoolDAO {
         private static final String QUERY = "SELECT message_id FROM spooler;";
 
         @Override
-        protected PreparedStatement createStatement(Connection conn) throws SQLException {
-            return conn.prepareStatement(QUERY);
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
         }
 
         @Override
@@ -209,11 +211,11 @@ public class DiskSpoolDAO {
         }
 
         List<Long> mapResultToIds(ResultSet rs) throws SQLException {
-            List<Long> currentIds = new ArrayList<>();
+            List<Long> ids = new ArrayList<>();
             while (rs.next()) {
-                currentIds.add(rs.getLong("message_id"));
+                ids.add(rs.getLong("message_id"));
             }
-            return currentIds;
+            return ids;
         }
     }
 
@@ -224,8 +226,8 @@ public class DiskSpoolDAO {
                         + "FROM spooler WHERE message_id = ?;";
 
         @Override
-        protected PreparedStatement createStatement(Connection conn) throws SQLException {
-            return conn.prepareStatement(QUERY);
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
         }
 
         @Override
@@ -233,14 +235,14 @@ public class DiskSpoolDAO {
             return statement.executeQuery();
         }
 
-        ResultSet executeWithParameters(Long messageId) throws SQLException {
+        ResultSet executeWithParameters(Long id) throws SQLException {
             return executeWithParameters(s -> {
-                s.setLong(1, messageId);
+                s.setLong(1, id);
                 return null;
             });
         }
 
-        SpoolMessage mapResultToMessage(long messageId, ResultSet rs) throws SQLException, IOException {
+        SpoolMessage mapResultToMessage(long id, ResultSet rs) throws SQLException, IOException {
             if (!rs.next()) {
                 return null;
             }
@@ -261,7 +263,7 @@ public class DiskSpoolDAO {
                             new TypeReference<List<UserProperty>>(){})).build();
 
             return SpoolMessage.builder()
-                    .id(messageId)
+                    .id(id)
                     .retried(new AtomicInteger(rs.getInt("retried")))
                     .request(request).build();
         }
@@ -274,8 +276,8 @@ public class DiskSpoolDAO {
                         + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?);";
 
         @Override
-        protected PreparedStatement createStatement(Connection conn) throws SQLException {
-            return conn.prepareStatement(QUERY);
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
         }
 
         @Override
@@ -338,8 +340,8 @@ public class DiskSpoolDAO {
         private static final String QUERY = "DELETE FROM spooler WHERE message_id = ?;";
 
         @Override
-        protected PreparedStatement createStatement(Connection conn) throws SQLException {
-            return conn.prepareStatement(QUERY);
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
         }
 
         @Override
@@ -347,9 +349,9 @@ public class DiskSpoolDAO {
             return statement.executeUpdate();
         }
 
-        protected Integer executeWithParameters(Long messageId) throws SQLException {
+        protected Integer executeWithParameters(Long id) throws SQLException {
             return executeWithParameters(s -> {
-                s.setLong(1, messageId);
+                s.setLong(1, id);
                 return null;
             });
         }
@@ -372,8 +374,8 @@ public class DiskSpoolDAO {
                 + ");";
 
         @Override
-        protected PreparedStatement createStatement(Connection conn) throws SQLException {
-            return conn.prepareStatement(QUERY);
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
         }
 
         @Override
@@ -382,13 +384,21 @@ public class DiskSpoolDAO {
         }
 
         @Override
-        public Void onNewConnection(Connection newConnection) throws SQLException {
-            super.onNewConnection(newConnection);
-            execute(); // recreate spooler table right away
+        public Void onNewConnection(Connection connection) throws SQLException {
+            super.onNewConnection(connection);
+            execute();
             return null;
         }
     }
 
+    /**
+     * A {@link Statement} wrapper that reuses the statement across executions.
+     * The statement is automatically recreated if underlying {@link Connection}
+     * is changed.
+     *
+     * @param <T> statement type
+     * @param <R> execution result type
+     */
     abstract class CachedStatement<T extends Statement, R> {
         private T statement;
 
@@ -396,15 +406,31 @@ public class DiskSpoolDAO {
             onNewConnection.add(this::onNewConnection);
         }
 
-        public Void onNewConnection(Connection newConnection) throws SQLException {
+        /**
+         * Callback that's executed whenever a database connection is created,
+         * during startup, or after corruption recovery, for example.
+         *
+         * @param connection connection
+         * @return nothing
+         * @throws SQLException if unable to close old statement, or unable to create a new statement
+         */
+        public Void onNewConnection(Connection connection) throws SQLException {
+            // TODO lock needed anymore?
             try (LockScope ls = LockScope.lock(connectionLock.readLock())) {
                 close(); // clean up old resources
-                statement = createStatement(newConnection);
+                statement = createStatement(connection);
             }
             return null;
         }
 
-        protected abstract T createStatement(Connection conn) throws SQLException;
+        /**
+         * Create a new statement.
+         *
+         * @param connection connection
+         * @return statement
+         * @throws SQLException if unable to create statement
+         */
+        protected abstract T createStatement(Connection connection) throws SQLException;
 
         public void close() throws SQLException {
             if (statement != null) {
@@ -412,10 +438,23 @@ public class DiskSpoolDAO {
             }
         }
 
+        /**
+         * Execute the statement.  This could be any type of execution, e.g. executeQuery, executeUpdate.
+         *
+         * @return execution results
+         * @throws SQLException if error occurs during execution
+         */
         R execute() throws SQLException {
             return executeInternal();
         }
 
+        /**
+         * Set parameters on the statement and execute it.
+         *
+         * @param decorator function that sets statement parameters
+         * @return execution results
+         * @throws SQLException if error occurs during execution
+         */
         R executeWithParameters(CrashableFunction<T, Void, SQLException> decorator) throws SQLException {
             decorator.apply(statement);
             return executeInternal();
