@@ -22,6 +22,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
 
     public static final String PERSISTENCE_SERVICE_NAME = "aws.greengrass.DiskSpooler";
     private static final Logger logger = LogManager.getLogger(DiskSpool.class);
+    private static final String KV_MESSAGE_ID = "messageId";
     private final DiskSpoolDAO dao;
 
     @Inject
@@ -41,12 +42,11 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
             return dao.getSpoolMessageById(id);
         } catch (SQLException e) {
             logger.atError()
-                    .kv("messageId", id)
+                    .kv(KV_MESSAGE_ID, id)
                     .cause(e)
                     .log("Failed to retrieve message by messageId");
             return null;
         }
-
     }
 
 
@@ -58,10 +58,10 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public void removeMessageById(long id) {
         try {
             dao.removeSpoolMessageById(id);
-            logger.atTrace().kv("MessageId", id).log("Removed message from Disk Spooler");
+            logger.atTrace().kv(KV_MESSAGE_ID, id).log("Removed message from Disk Spooler");
         } catch (SQLException e) {
             logger.atWarn()
-                    .kv("messageId", id)
+                    .kv(KV_MESSAGE_ID, id)
                     .cause(e)
                     .log("Failed to delete message by messageId");
         }
@@ -76,7 +76,7 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public void add(long id, SpoolMessage message) throws IOException {
         try {
             dao.insertSpoolMessage(message);
-            logger.atTrace().kv("MessageId", id).log("Added message to Disk Spooler");
+            logger.atTrace().kv(KV_MESSAGE_ID, id).log("Added message to Disk Spooler");
         } catch (SQLException e) {
             throw new IOException(e);
         }
@@ -94,10 +94,17 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     @Override
     public void initializeSpooler() throws IOException {
         try {
+            dao.initialize();
             dao.setUpDatabase();
             logger.atInfo().log("Finished setting up Database");
-        } catch (SQLException exception) {
-            throw new IOException(exception);
+        } catch (SQLException e) {
+            throw new IOException(e);
         }
+    }
+
+    @Override
+    protected void shutdown() throws InterruptedException {
+        super.shutdown();
+        dao.close();
     }
 }

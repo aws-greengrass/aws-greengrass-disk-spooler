@@ -21,8 +21,8 @@ public class DiskSpoolDAOFake extends DiskSpoolDAO {
     @Getter
     private final ConnectionFake connection = new ConnectionFake();
 
-    public DiskSpoolDAOFake(Path rootDir) {
-        super(rootDir.resolve("spooler.db"));
+    public DiskSpoolDAOFake(Path path) {
+        super(path);
     }
 
     @Override
