@@ -98,6 +98,7 @@ public class DiskSpoolDAO {
      * @throws SQLException if database is unable to be created
      */
     public void initialize() throws SQLException {
+        registerDriver();
         try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
             close();
             connection = createConnection();
@@ -113,6 +114,16 @@ public class DiskSpoolDAO {
                 }
                 statement.replaceStatement(connection);
             }
+        }
+    }
+
+    private void registerDriver() throws SQLException {
+        try {
+            // driver is registered statically within JDBC,
+            // so it will only happen once
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("unable to load driver", e);
         }
     }
 
