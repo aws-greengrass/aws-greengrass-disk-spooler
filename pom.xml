@@ -94,6 +94,7 @@
                             <excludes>
                                 <exclude>*</exclude>
                                 <exclude>codestyle/**</exclude>
+                                <exclude>uat-results/**</exclude>
                                 <exclude>src/*/resources/**</exclude>
                             </excludes>
                         </licenseSet>
