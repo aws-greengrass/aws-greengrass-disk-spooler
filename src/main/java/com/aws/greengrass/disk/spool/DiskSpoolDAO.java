@@ -392,7 +392,6 @@ public class DiskSpoolDAO {
 
     abstract class CachedStatement<T extends Statement, R> {
         private T statement;
-        private Connection connection;
 
         protected CachedStatement() {
             onNewConnection.add(this::onNewConnection);
@@ -401,8 +400,7 @@ public class DiskSpoolDAO {
         public Void onNewConnection(Connection newConnection) throws SQLException {
             try (LockScope ls = LockScope.lock(connectionLock.readLock())) {
                 close(); // clean up old resources
-                connection = newConnection;
-                statement = createStatement(connection);
+                statement = createStatement(newConnection);
             }
             return null;
         }
