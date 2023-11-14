@@ -30,8 +30,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
@@ -42,10 +44,11 @@ import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
 
 public class DiskSpoolDAO {
 
-    private static final Logger logger = LogManager.getLogger(DiskSpoolDAO.class);
+    private static final Logger LOGGER = LogManager.getLogger(DiskSpoolDAO.class);
     private static final ObjectMapper MAPPER = SerializerFactory.getFailSafeJsonObjectMapper();
-    protected static final String DATABASE_CONNECTION_URL = "jdbc:sqlite:%s";
-    protected static final String DATABASE_FILE_NAME = "spooler.db";
+    private static final String DATABASE_CONNECTION_URL = "jdbc:sqlite:%s";
+    private static final String DATABASE_FILE_NAME = "spooler.db";
+    private static final String KV_URL = "url";
     private static final Set<Integer> CORRUPTION_ERROR_CODES = new HashSet<>();
 
     static {
@@ -55,15 +58,28 @@ public class DiskSpoolDAO {
 
     private final Path databasePath;
     private final String url;
+    private final CreateSpoolerTable createSpoolerTable = new CreateSpoolerTable();
+    private final GetAllSpoolMessageIds getAllSpoolMessageIds = new GetAllSpoolMessageIds();
+    private final GetSpoolMessageById getSpoolMessageById = new GetSpoolMessageById();
+    private final InsertSpoolMessage insertSpoolMessage = new InsertSpoolMessage();
+    private final RemoveSpoolMessageById removeSpoolMessageById = new RemoveSpoolMessageById();
+    private final List<CachedStatement<?,?>> allStatements = Arrays.asList(
+            createSpoolerTable,
+            getAllSpoolMessageIds,
+            getSpoolMessageById,
+            insertSpoolMessage,
+            removeSpoolMessageById
+    );
+
     private final ReentrantLock recoverDBLock = new ReentrantLock();
     private final ReentrantReadWriteLock connectionLock = new ReentrantReadWriteLock();
     private Connection connection;
 
     /**
-     * This method will construct the database path.
+     * Create a new DiskSpoolDAO.
      *
-     * @param paths The path to the working directory
-     * @throws IOException when fails to set up the database
+     * @param paths nucleus paths
+     * @throws IOException if unable to resolve database path
      */
     @Inject
     public DiskSpoolDAO(NucleusPaths paths) throws IOException {
@@ -79,182 +95,292 @@ public class DiskSpoolDAO {
     /**
      * Initialize the database connection.
      *
-     * @throws SQLException if db is unable to be created
+     * @throws SQLException if database is unable to be created
      */
     public void initialize() throws SQLException {
         try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
             close();
-            logger.atDebug().kv("url", url).log("Creating DB connection");
-            connection = getDbInstance();
+            connection = createConnection();
+
+            // recreate the database table first
+            createSpoolerTable.replaceStatement(connection);
+            createSpoolerTable.execute();
+
+            // eagerly create remaining statements
+            for (CachedStatement<?, ?> statement : allStatements) {
+                if (Objects.equals(statement, createSpoolerTable)) {
+                    continue;
+                }
+                statement.replaceStatement(connection);
+            }
         }
     }
 
     /**
-     * Close DAO resources.
+     * Close any open DAO resources, including database connections.
      */
     public void close() {
         try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
+            for (CachedStatement<?, ?> statement : allStatements) {
+                try {
+                    statement.close();
+                } catch (SQLException e) {
+                    LOGGER.atWarn()
+                            .kv("statement", statement.getClass().getSimpleName())
+                            .log("Unable to close statement");
+                }
+            }
             if (connection != null) {
                 try {
                     connection.close();
                 } catch (SQLException e) {
-                    logger.atWarn().kv("url", url).log("Unable to close pre-existing connection");
+                    LOGGER.atWarn().kv(KV_URL, url).log("Unable to close pre-existing connection");
                 }
             }
         }
     }
 
     /**
-     * This method will query the existing database for the existing queue of MQTT request Ids
-     * and return them in order.
+     * Get ids of all messages from the database.
      *
-     * @return ordered list of the existing ids in the persistent queue
-     * @throws SQLException         when fails to get SpoolMessage IDs
+     * @return ordered iterable of message ids
+     * @throws SQLException if statement failed to execute, or when unable to read results
      */
     public Iterable<Long> getAllSpoolMessageIds() throws SQLException {
-        // TODO don't recreate prepared statements every time
-        return performSqlOperation(conn -> {
-            try (PreparedStatement stmt = getAllSpoolMessageIdsStatement(conn);
-                 ResultSet rs = stmt.executeQuery()) {
-                return getIdsFromRs(rs);
-            }
-        });
-    }
-
-    private PreparedStatement getAllSpoolMessageIdsStatement(Connection conn) throws SQLException {
-        String query = "SELECT message_id FROM spooler;";
-        return conn.prepareStatement(query);
+        try (ResultSet rs = getAllSpoolMessageIds.execute()) {
+            return getAllSpoolMessageIds.mapResultToIds(rs);
+        }
     }
 
     /**
-     * This method will query a SpoolMessage and return it given an id.
+     * Get a single message by id from the database.
      *
-     * @param messageId the id of the SpoolMessage
-     * @return SpoolMessage
-     * @throws SQLException         when fails to get a SpoolMessage by id
+     * @param id message id
+     * @return  message
+     * @throws SQLException if statement failed to execute, or when unable to read results
      */
-    public SpoolMessage getSpoolMessageById(long messageId) throws SQLException {
-        return performSqlOperation(conn -> {
-            try (PreparedStatement pstmt = getSpoolMessageByIdStatement(conn, messageId);
-                 ResultSet rs = pstmt.executeQuery()) {
-                try {
-                    return getSpoolMessageFromRs(messageId, rs);
-                } catch (IOException e) {
-                    throw new SQLException(e);
-                }
-            }
-        });
-    }
-
-    private PreparedStatement getSpoolMessageByIdStatement(Connection conn, long messageId) throws SQLException {
-        String query = "SELECT retried, topic, qos, retain, payload, userProperties, messageExpiryIntervalSeconds, "
-                + "correlationData, responseTopic, payloadFormat, contentType FROM spooler WHERE message_id = ?;";
-        PreparedStatement pstmt = conn.prepareStatement(query);
-        pstmt.setLong(1, messageId);
-        return pstmt;
+    public SpoolMessage getSpoolMessageById(long id) throws SQLException {
+        try (ResultSet rs = getSpoolMessageById.executeWithParameters(id)) {
+            return getSpoolMessageById.mapResultToMessage(id, rs);
+        } catch (IOException e) {
+            throw new SQLException(e);
+        }
     }
 
     /**
-     * This method will insert a SpoolMessage into the database.
+     * Insert a message into the database.
      *
-     * @param message instance of SpoolMessage
-     * @throws SQLException         when fails to insert SpoolMessage in the database
+     * @param message message
+     * @throws SQLException if statement failed to execute
      */
     public void insertSpoolMessage(SpoolMessage message) throws SQLException {
-        performSqlOperation(conn -> {
-            try (PreparedStatement pstmt = insertSpoolMessageStatement(conn, message)) {
-                return pstmt.executeUpdate();
-            }
-        });
-    }
-
-    private PreparedStatement insertSpoolMessageStatement(Connection conn, SpoolMessage message) throws SQLException {
-        String query =
-                "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload, userProperties, "
-                        + "messageExpiryIntervalSeconds, correlationData, responseTopic, payloadFormat, contentType) "
-                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?);";
-        PreparedStatement pstmt = conn.prepareStatement(query);
-
-        Publish request = message.getRequest();
-        pstmt.setLong(1, message.getId());
-        pstmt.setInt(2, message.getRetried().get());
-
-        // MQTT 3 & 5 fields
-        pstmt.setString(3, request.getTopic());
-        pstmt.setInt(4, request.getQos().getValue());
-        pstmt.setBoolean(5, request.isRetain());
-        pstmt.setBytes(6, request.getPayload());
-
-        if (request.getUserProperties() == null) {
-            pstmt.setNull(7, Types.NULL);
-        } else {
-            try {
-                pstmt.setString(7, MAPPER.writeValueAsString(request.getUserProperties()));
-            } catch (IOException e) {
-                throw new SQLException(e);
-            }
-        }
-        if (request.getMessageExpiryIntervalSeconds() == null) {
-            pstmt.setNull(8, Types.NULL);
-        } else {
-            pstmt.setLong(8, request.getMessageExpiryIntervalSeconds());
-        }
-        if (request.getCorrelationData() == null) {
-            pstmt.setNull(9, Types.NULL);
-        } else {
-            pstmt.setBytes(9, request.getCorrelationData());
-        }
-        if (request.getResponseTopic() == null) {
-            pstmt.setNull(10, Types.NULL);
-        } else {
-            pstmt.setString(10, request.getResponseTopic());
-        }
-        if (request.getPayloadFormat() == null) {
-            pstmt.setNull(11, Types.NULL);
-        } else {
-            pstmt.setInt(11, request.getPayloadFormat().getValue());
-        }
-        if (request.getContentType() == null) {
-            pstmt.setNull(12, Types.NULL);
-        } else {
-            pstmt.setString(12, request.getContentType());
-        }
-        return pstmt;
+        insertSpoolMessage.executeWithParameters(message);
     }
 
     /**
-     * This method will remove a SpoolMessage from the database given its id.
+     * Remove a message by id from the database.
      *
-     * @param messageId the id of the SpoolMessage
-     * @throws SQLException         when fails to remove a SpoolMessage by id
+     * @param id message id
+     * @throws SQLException if statement failed to execute
      */
-    public void removeSpoolMessageById(Long messageId) throws SQLException {
-        performSqlOperation(conn -> {
-            try (PreparedStatement pstmt = removeSpoolMessageByIdStatement(conn, messageId)) {
-                return pstmt.executeUpdate();
-            }
-        });
-    }
-
-    private PreparedStatement removeSpoolMessageByIdStatement(Connection conn, long messageId) throws SQLException {
-        String query = "DELETE FROM spooler WHERE message_id = ?;";
-        PreparedStatement pstmt = conn.prepareStatement(query);
-        pstmt.setLong(1, messageId);
-        return pstmt;
+    public void removeSpoolMessageById(Long id) throws SQLException {
+        removeSpoolMessageById.executeWithParameters(id);
     }
 
     /**
-     * This method creates a connection instance of the SQLite database.
+     * Create a new database connection.
      *
-     * @return Connection for SQLite database instance
-     * @throws SQLException When fails to get Database Connection
+     * @return connection
+     * @throws SQLException if database access error occurs
      */
-    public Connection getDbInstance() throws SQLException {
+    protected Connection createConnection() throws SQLException {
+        LOGGER.atDebug().kv(KV_URL, url).log("Creating database connection");
         return DriverManager.getConnection(url);
     }
 
-    protected void setUpDatabase() throws SQLException {
-        String query = "CREATE TABLE IF NOT EXISTS spooler ("
+    void recoverFromCorruption() throws SQLException {
+        if (!recoverDBLock.tryLock()) {
+            // corruption recovery in progress
+            return;
+        }
+
+        // hold connection lock throughout recovery to prevent incoming operations from executing
+        try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
+            LOGGER.atWarn().kv(KV_URL, url).log("Database is corrupted, creating new database");
+            close();
+            try {
+                Files.deleteIfExists(databasePath);
+            } catch (IOException e2) {
+                throw new SQLException(e2);
+            }
+            initialize();
+        } finally {
+            recoverDBLock.unlock();
+        }
+    }
+
+    class GetAllSpoolMessageIds extends CachedStatement<PreparedStatement, ResultSet> {
+        private static final String QUERY = "SELECT message_id FROM spooler;";
+
+        @Override
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
+        }
+
+        @Override
+        protected ResultSet doExecute(PreparedStatement statement) throws SQLException {
+            return statement.executeQuery();
+        }
+
+        List<Long> mapResultToIds(ResultSet rs) throws SQLException {
+            List<Long> ids = new ArrayList<>();
+            while (rs.next()) {
+                ids.add(rs.getLong("message_id"));
+            }
+            return ids;
+        }
+    }
+
+    class GetSpoolMessageById extends CachedStatement<PreparedStatement, ResultSet> {
+        private static final String QUERY =
+                "SELECT retried, topic, qos, retain, payload, userProperties, messageExpiryIntervalSeconds, "
+                        + "correlationData, responseTopic, payloadFormat, contentType "
+                        + "FROM spooler WHERE message_id = ?;";
+
+        @Override
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
+        }
+
+        @Override
+        protected ResultSet doExecute(PreparedStatement statement) throws SQLException {
+            return statement.executeQuery();
+        }
+
+        ResultSet executeWithParameters(Long id) throws SQLException {
+            return executeWithParameters(s -> {
+                s.setLong(1, id);
+                return null;
+            });
+        }
+
+        SpoolMessage mapResultToMessage(long id, ResultSet rs) throws SQLException, IOException {
+            if (!rs.next()) {
+                return null;
+            }
+            Publish request = Publish.builder()
+                    .qos(QOS.fromInt(rs.getInt("qos")))
+                    .retain(rs.getBoolean("retain"))
+                    .topic(rs.getString("topic"))
+                    .payload(rs.getBytes("payload"))
+                    .payloadFormat(rs.getObject("payloadFormat") == null
+                            ? null : Publish.PayloadFormatIndicator.fromInt(rs.getInt("payloadFormat")))
+                    .messageExpiryIntervalSeconds(rs.getObject("messageExpiryIntervalSeconds") == null
+                            ? null : rs.getLong("messageExpiryIntervalSeconds"))
+                    .responseTopic(rs.getString("responseTopic"))
+                    .correlationData(rs.getBytes("correlationData"))
+                    .contentType(rs.getString("contentType"))
+                    .userProperties(rs.getString("userProperties") == null
+                            ? null : MAPPER.readValue(rs.getString("userProperties"),
+                            new TypeReference<List<UserProperty>>(){})).build();
+
+            return SpoolMessage.builder()
+                    .id(id)
+                    .retried(new AtomicInteger(rs.getInt("retried")))
+                    .request(request).build();
+        }
+    }
+
+    class InsertSpoolMessage extends CachedStatement<PreparedStatement, Integer> {
+        private static final String QUERY =
+                "INSERT INTO spooler (message_id, retried, topic, qos, retain, payload, userProperties, "
+                        + "messageExpiryIntervalSeconds, correlationData, responseTopic, payloadFormat, contentType) "
+                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?);";
+
+        @Override
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
+        }
+
+        @Override
+        protected Integer doExecute(PreparedStatement statement) throws SQLException {
+            return statement.executeUpdate();
+        }
+
+        Integer executeWithParameters(SpoolMessage message) throws SQLException {
+            return executeWithParameters(s -> {
+                Publish request = message.getRequest();
+                s.setLong(1, message.getId());
+                s.setInt(2, message.getRetried().get());
+
+                // MQTT 3 & 5 fields
+                s.setString(3, request.getTopic());
+                s.setInt(4, request.getQos().getValue());
+                s.setBoolean(5, request.isRetain());
+                s.setBytes(6, request.getPayload());
+
+                if (request.getUserProperties() == null) {
+                    s.setNull(7, Types.NULL);
+                } else {
+                    try {
+                        s.setString(7, MAPPER.writeValueAsString(request.getUserProperties()));
+                    } catch (IOException e) {
+                        throw new SQLException(e);
+                    }
+                }
+                if (request.getMessageExpiryIntervalSeconds() == null) {
+                    s.setNull(8, Types.NULL);
+                } else {
+                    s.setLong(8, request.getMessageExpiryIntervalSeconds());
+                }
+                if (request.getCorrelationData() == null) {
+                    s.setNull(9, Types.NULL);
+                } else {
+                    s.setBytes(9, request.getCorrelationData());
+                }
+                if (request.getResponseTopic() == null) {
+                    s.setNull(10, Types.NULL);
+                } else {
+                    s.setString(10, request.getResponseTopic());
+                }
+                if (request.getPayloadFormat() == null) {
+                    s.setNull(11, Types.NULL);
+                } else {
+                    s.setInt(11, request.getPayloadFormat().getValue());
+                }
+                if (request.getContentType() == null) {
+                    s.setNull(12, Types.NULL);
+                } else {
+                    s.setString(12, request.getContentType());
+                }
+                return null;
+            });
+        }
+    }
+
+    class RemoveSpoolMessageById extends CachedStatement<PreparedStatement, Integer> {
+        private static final String QUERY = "DELETE FROM spooler WHERE message_id = ?;";
+
+        @Override
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
+        }
+
+        @Override
+        protected Integer doExecute(PreparedStatement statement) throws SQLException {
+            return statement.executeUpdate();
+        }
+
+        protected Integer executeWithParameters(Long id) throws SQLException {
+            return executeWithParameters(s -> {
+                s.setLong(1, id);
+                return null;
+            });
+        }
+    }
+
+    class CreateSpoolerTable extends CachedStatement<PreparedStatement, Integer> {
+        private static final String QUERY = "CREATE TABLE IF NOT EXISTS spooler ("
                 + "message_id INTEGER PRIMARY KEY, "
                 + "retried INTEGER NOT NULL, "
                 + "topic STRING NOT NULL,"
@@ -268,85 +394,89 @@ public class DiskSpoolDAO {
                 + "payloadFormat INTEGER,"
                 + "contentType STRING"
                 + ");";
-        DriverManager.registerDriver(new org.sqlite.JDBC());
-        performSqlOperation(conn -> {
-            try (Statement st = conn.createStatement()) {
-                // create new table if table doesn't exist
-                st.executeUpdate(query);
-                return null;
-            }
-        });
-    }
 
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    private <T> T performSqlOperation(CrashableFunction<Connection, T, SQLException> operation) throws SQLException {
-        try {
-            try (LockScope ls = LockScope.lock(connectionLock.readLock())) {
-                return operation.apply(connection);
-            }
-        } catch (SQLException e) {
-            if (CORRUPTION_ERROR_CODES.contains(e.getErrorCode())) {
-                recoverFromCorruption();
-            }
-            throw e;
-        } catch (Exception e) {
-            throw new SQLException(e);
+        @Override
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
+        }
+
+        @Override
+        protected Integer doExecute(PreparedStatement statement) throws SQLException {
+            return statement.executeUpdate();
         }
     }
 
-    void recoverFromCorruption() throws SQLException {
-        if (!recoverDBLock.tryLock()) {
-            // corruption recovery in progress
-            return;
+    /**
+     * A {@link Statement} wrapper that reuses the statement across executions.
+     *
+     * @param <T> statement type
+     * @param <R> execution result type
+     */
+    abstract class CachedStatement<T extends Statement, R> {
+        private T statement;
+
+        /**
+         * Create a new statement and replace the existing one, if present.
+         *
+         * @param connection connection
+         * @throws SQLException if unable to create statement
+         */
+        public void replaceStatement(Connection connection) throws SQLException {
+            close(); // clean up old resources
+            statement = createStatement(connection);
         }
 
-        // hold connection lock throughout recovery to prevent incoming operations from executing
-        try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
-            logger.atWarn().log(String.format("Database %s is corrupted, creating new database", databasePath));
-            close();
+        /**
+         * Create a new statement.
+         *
+         * @param connection connection
+         * @return statement
+         * @throws SQLException if unable to create statement
+         */
+        protected abstract T createStatement(Connection connection) throws SQLException;
+
+        public void close() throws SQLException {
+            if (statement != null) {
+                statement.close();
+            }
+        }
+
+        /**
+         * Execute the statement.  This could be any type of execution, e.g. executeQuery, executeUpdate.
+         *
+         * @return execution results
+         * @throws SQLException if error occurs during execution
+         */
+        R execute() throws SQLException {
+            return executeInternal();
+        }
+
+        /**
+         * Set parameters on the statement and execute it.
+         *
+         * @param decorator function that sets statement parameters
+         * @return execution results
+         * @throws SQLException if error occurs during execution
+         */
+        R executeWithParameters(CrashableFunction<T, Void, SQLException> decorator) throws SQLException {
+            decorator.apply(statement);
+            return executeInternal();
+        }
+
+        @SuppressWarnings("PMD.AvoidCatchingGenericException")
+        private R executeInternal() throws SQLException {
             try {
-                Files.deleteIfExists(databasePath);
-            } catch (IOException e2) {
-                throw new SQLException(e2);
+                return doExecute(statement);
+            } catch (SQLException e) {
+                if (CORRUPTION_ERROR_CODES.contains(e.getErrorCode())) {
+                    recoverFromCorruption();
+                }
+                throw e;
+            } catch (Exception e) {
+                throw new SQLException(e);
             }
-            initialize();
-            setUpDatabase();
-        } finally {
-            recoverDBLock.unlock();
         }
-    }
 
-    private static List<Long> getIdsFromRs(ResultSet rs) throws SQLException {
-        List<Long> currentIds = new ArrayList<>();
-        while (rs.next()) {
-            currentIds.add(rs.getLong("message_id"));
-        }
-        return currentIds;
-    }
-
-    private static SpoolMessage getSpoolMessageFromRs(long messageId, ResultSet rs) throws SQLException, IOException {
-        if (!rs.next()) {
-            return null;
-        }
-        Publish request = Publish.builder()
-                .qos(QOS.fromInt(rs.getInt("qos")))
-                .retain(rs.getBoolean("retain"))
-                .topic(rs.getString("topic"))
-                .payload(rs.getBytes("payload"))
-                .payloadFormat(rs.getObject("payloadFormat") == null
-                        ? null : Publish.PayloadFormatIndicator.fromInt(rs.getInt("payloadFormat")))
-                .messageExpiryIntervalSeconds(rs.getObject("messageExpiryIntervalSeconds") == null
-                        ? null : rs.getLong("messageExpiryIntervalSeconds"))
-                .responseTopic(rs.getString("responseTopic"))
-                .correlationData(rs.getBytes("correlationData"))
-                .contentType(rs.getString("contentType"))
-                .userProperties(rs.getString("userProperties") == null
-                        ? null : MAPPER.readValue(rs.getString("userProperties"),
-                        new TypeReference<List<UserProperty>>(){})).build();
-
-        return SpoolMessage.builder()
-                .id(messageId)
-                .retried(new AtomicInteger(rs.getInt("retried")))
-                .request(request).build();
+        protected abstract R doExecute(T statement) throws SQLException;
     }
 }

@@ -36,9 +36,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
 
 @ExtendWith({GGExtension.class, MockitoExtension.class})
 class DiskSpoolDAOTest {
@@ -79,9 +76,8 @@ class DiskSpoolDAOTest {
 
     @BeforeEach
     void setUp() throws SQLException {
-        dao = spy(new DiskSpoolDAOFake(currDir.resolve("spooler.db")));
+        dao = new DiskSpoolDAOFake(currDir.resolve("spooler.db"));
         dao.initialize();
-        dao.setUpDatabase();
     }
 
     @AfterEach
@@ -135,19 +131,17 @@ class DiskSpoolDAOTest {
         SQLException corruptionException = new SQLException("DB is corrupt", "some state", 11);
         dao.getConnection().addExceptionOnUpdate(corruptionException);
         assertThrows(SQLException.class, () -> operation.apply(dao));
-        verify(dao).recoverFromCorruption();
         operation.apply(dao);
     }
 
     @ParameterizedTest
     @MethodSource("allSpoolerOperations")
-    void GIVEN_spooler_WHEN_error_during_operation_THEN_exception_thrown(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation, ExtensionContext context) throws SQLException {
+    void GIVEN_spooler_WHEN_error_during_operation_THEN_exception_thrown(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation, ExtensionContext context) {
         ignoreExceptionOfType(context, SQLTransientException.class);
         SQLException transientException = new SQLTransientException("Some Transient Error");
         dao.getConnection().addExceptionOnUpdate(transientException);
         dao.getConnection().addExceptionOnUpdate(transientException);
         assertThrows(SQLException.class, () -> operation.apply(dao));
-        verify(dao, never()).recoverFromCorruption();
     }
 
     public static Stream<Arguments> allSpoolerOperations() {
