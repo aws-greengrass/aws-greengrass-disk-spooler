@@ -89,7 +89,6 @@ public class DiskSpoolDAO {
      * @throws SQLException if db is unable to be created
      */
     public void initialize() throws SQLException {
-        DriverManager.registerDriver(new org.sqlite.JDBC());
         try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
             close();
             logger.atDebug().kv("url", url).log("Creating DB connection");
