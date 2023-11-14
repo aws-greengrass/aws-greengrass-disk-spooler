@@ -37,8 +37,6 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import javax.inject.Inject;
 
 import static com.aws.greengrass.disk.spool.DiskSpool.PERSISTENCE_SERVICE_NAME;
