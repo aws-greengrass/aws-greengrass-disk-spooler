@@ -27,8 +27,8 @@ public class DiskSpoolDAOFake extends DiskSpoolDAO {
 
     @Override
     @SuppressWarnings("PMD.CloseResource")
-    public Connection getDbInstance() throws SQLException {
-        Connection conn = super.getDbInstance();
+    public Connection createConnection() throws SQLException {
+        Connection conn = super.createConnection();
         connection.setConnection(conn);
         return connection;
     }

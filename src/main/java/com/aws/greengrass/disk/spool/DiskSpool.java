@@ -95,7 +95,6 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public void initializeSpooler() throws IOException {
         try {
             dao.initialize();
-            dao.setUpDatabase();
             logger.atInfo().log("Finished setting up Database");
         } catch (SQLException e) {
             throw new IOException(e);
