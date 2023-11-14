@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
@@ -107,7 +108,7 @@ public class DiskSpoolDAO {
 
             // eagerly create remaining statements
             for (CachedStatement<?, ?> statement : allStatements) {
-                if (statement == createSpoolerTable) {
+                if (Objects.equals(statement, createSpoolerTable)) {
                     continue;
                 }
                 statement.replaceStatement(connection);
