@@ -157,7 +157,7 @@ public class DiskSpoolDAO {
      * @return ordered iterable of message ids
      * @throws SQLException if statement failed to execute, or when unable to read results
      */
-    public Iterable<Long> getAllSpoolMessageIds() throws SQLException {
+    public synchronized Iterable<Long> getAllSpoolMessageIds() throws SQLException {
         try (ResultSet rs = getAllSpoolMessageIds.execute()) {
             return getAllSpoolMessageIds.mapResultToIds(rs);
         }
@@ -170,7 +170,7 @@ public class DiskSpoolDAO {
      * @return  message
      * @throws SQLException if statement failed to execute, or when unable to read results
      */
-    public SpoolMessage getSpoolMessageById(long id) throws SQLException {
+    public synchronized SpoolMessage getSpoolMessageById(long id) throws SQLException {
         try (ResultSet rs = getSpoolMessageById.executeWithParameters(id)) {
             return getSpoolMessageById.mapResultToMessage(id, rs);
         } catch (IOException e) {

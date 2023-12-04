@@ -27,6 +27,10 @@ import java.sql.SQLException;
 import java.sql.SQLTransientException;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
@@ -36,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith({GGExtension.class, MockitoExtension.class})
 class DiskSpoolDAOTest {
@@ -72,6 +77,7 @@ class DiskSpoolDAOTest {
 
     @TempDir
     Path currDir;
+    ExecutorService executorService = Executors.newCachedThreadPool();
     DiskSpoolDAOFake dao;
 
     @BeforeEach
@@ -85,6 +91,39 @@ class DiskSpoolDAOTest {
         if (dao != null) {
             dao.close();
         }
+        executorService.shutdownNow();
+    }
+
+    @Test
+    void GIVEN_spooler_WHEN_concurrent_get_operations_THEN_success() throws SQLException, InterruptedException {
+        SpoolMessage message = SpoolMessage.builder()
+                .id(1)
+                .request(
+                        Publish.builder()
+                                .topic("spool")
+                                .payload("Hello".getBytes(StandardCharsets.UTF_8))
+                                .qos(QOS.AT_LEAST_ONCE)
+                                .messageExpiryIntervalSeconds(2L)
+                                .payloadFormat(Publish.PayloadFormatIndicator.BYTES)
+                                .contentType("Test")
+                                .build())
+                .build();
+        dao.insertSpoolMessage(message);
+        AtomicReference<SQLException> ex = new AtomicReference<>();
+        for (int i = 0; i < 30; i++) {
+            executorService.submit(() -> {
+                try {
+                    dao.getAllSpoolMessageIds();
+                    dao.getSpoolMessageById(1);
+                } catch (SQLException e) {
+                    ex.set(e);
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+        executorService.shutdown();
+        assertTrue(executorService.awaitTermination(5L, TimeUnit.SECONDS));
+        assertNull(ex.get());
     }
 
     @Test
