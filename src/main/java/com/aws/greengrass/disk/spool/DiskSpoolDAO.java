@@ -217,7 +217,7 @@ public class DiskSpoolDAO {
 
         // hold connection lock throughout recovery to prevent incoming operations from executing
         try (LockScope ls = LockScope.lock(connectionLock.writeLock())) {
-            LOGGER.atWarn().kv(KV_URL, url).log("Database is corrupted, creating new database");
+            LOGGER.atWarn().kv(KV_URL, url).log(DATABASE_FILE_NAME + " is corrupted, creating new database");
             close();
             try {
                 Files.deleteIfExists(databasePath);
