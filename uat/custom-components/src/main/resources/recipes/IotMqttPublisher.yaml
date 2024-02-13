@@ -1,0 +1,21 @@
+#
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+
+---
+RecipeFormatVersion: '2020-01-25'
+ComponentName: IotMqttPublisher
+ComponentVersion: '0.0.0'
+ComponentDescription: Publishes MQTT messages to IoT Core via Nucleus' spooler
+ComponentPublisher: Amazon
+Manifests:
+  - Artifacts:
+      - URI: classpath:/local-store/artifacts/custom-components.jar
+    Lifecycle:
+      Setenv:
+        topic: "{configuration:/topic}"
+        payload: "{configuration:/payload}"
+        qos: "{configuration:/qos}"
+      Run: >-
+        java -Dlog.level=INFO -DserverPort={configuration:/assertionServerPort} -DcomponentName="IotMqttPublisher" -jar {artifacts:path}/custom-components.jar
