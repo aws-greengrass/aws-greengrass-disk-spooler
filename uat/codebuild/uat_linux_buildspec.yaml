@@ -1,0 +1,29 @@
+#
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      java: corretto11
+  build:
+    commands:
+      - curl -s https://d2s8p88vqu9w66.cloudfront.net/releases/greengrass-nucleus-latest.zip > /tmp/greengrass-nucleus-latest.zip
+      - mvn -U -ntp verify -DskipTests=true
+      - mvn -U -ntp clean verify -f uat/pom.xml
+      - java -Dggc.archive=/tmp/greengrass-nucleus-latest.zip
+        -Dtags='DiskSpooler' -Dggc.install.root=$CODEBUILD_SRC_DIR -Dggc.log.level=INFO -Daws.region=$AWS_REGION
+        -jar uat/testing-features/target/greengrass-disk-spooler-testing-features.jar
+
+artifacts:
+  files:
+    - 'testResults/**/*'
+  name: 'DiskSpoolerUatLinuxLogs.zip'
+
+reports:
+  uat-reports:
+    files:
+      - "TEST-greengrass-results.xml"
+    file-format: "JUNITXML"
