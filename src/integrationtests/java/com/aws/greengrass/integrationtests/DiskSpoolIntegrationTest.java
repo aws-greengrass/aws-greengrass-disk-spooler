@@ -263,7 +263,8 @@ class DiskSpoolIntegrationTest {
         spoolerDatabaseFile = kernel.getNucleusPaths()
                 .workPath(DiskSpool.PERSISTENCE_SERVICE_NAME).resolve(DATABASE_FILE_NAME);
         diskSpool = kernel.getContext().get(DiskSpool.class);
-        spooler = new Spool(kernel.getContext().get(DeviceConfiguration.class), kernel);
+        spooler = new Spool(kernel.getContext().get(DeviceConfiguration.class), kernel,
+                kernel.getContext().get(java.util.concurrent.ExecutorService.class));
     }
 
     private void startKernelWithConfig() throws InterruptedException {
