@@ -15,6 +15,7 @@ import com.aws.greengrass.mqttclient.spool.SpoolMessage;
 
 import java.io.IOException;
 import java.sql.SQLException;
+import java.util.List;
 import javax.inject.Inject;
 
 @ImplementsService(name = DiskSpool.PERSISTENCE_SERVICE_NAME, autostart = true)
@@ -86,6 +87,32 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public Iterable<Long> getAllMessageIds() throws IOException {
         try {
             return dao.getAllSpoolMessageIds();
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
+    }
+
+    @Override
+    public long getMaxMessageId() throws IOException {
+        try {
+            return dao.getMaxMessageId();
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
+    }
+
+    /**
+     * Get all message IDs with their payload sizes, ordered by ID ascending.
+     * Returns a list of [messageId, payloadSizeInBytes] pairs without reading full payloads.
+     * This enables fast capacity tracking during startup without per-message I/O.
+     *
+     * @return ordered list of (id, size) pairs, or null if not supported
+     * @throws IOException if a database error occurs
+     */
+    @Override
+    public List<long[]> getAllMessageIdsWithSizes() throws IOException {
+        try {
+            return dao.getAllMessageIdsWithPayloadSize();
         } catch (SQLException e) {
             throw new IOException(e);
         }

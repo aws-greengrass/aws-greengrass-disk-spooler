@@ -60,12 +60,17 @@ public class DiskSpoolDAO {
     private final String url;
     private final CreateSpoolerTable createSpoolerTable = new CreateSpoolerTable();
     private final GetAllSpoolMessageIds getAllSpoolMessageIds = new GetAllSpoolMessageIds();
+    private final GetAllMessageIdsWithPayloadSize getAllMessageIdsWithPayloadSize =
+            new GetAllMessageIdsWithPayloadSize();
+    private final GetMaxMessageId getMaxMessageId = new GetMaxMessageId();
     private final GetSpoolMessageById getSpoolMessageById = new GetSpoolMessageById();
     private final InsertSpoolMessage insertSpoolMessage = new InsertSpoolMessage();
     private final RemoveSpoolMessageById removeSpoolMessageById = new RemoveSpoolMessageById();
     private final List<CachedStatement<?,?>> allStatements = Arrays.asList(
             createSpoolerTable,
             getAllSpoolMessageIds,
+            getAllMessageIdsWithPayloadSize,
+            getMaxMessageId,
             getSpoolMessageById,
             insertSpoolMessage,
             removeSpoolMessageById
@@ -164,6 +169,31 @@ public class DiskSpoolDAO {
     }
 
     /**
+     * Get the maximum message ID currently stored in the database.
+     *
+     * @return the maximum message ID, or -1 if the table is empty
+     * @throws SQLException if statement failed to execute
+     */
+    public synchronized long getMaxMessageId() throws SQLException {
+        try (ResultSet rs = getMaxMessageId.execute()) {
+            return getMaxMessageId.mapResult(rs);
+        }
+    }
+
+    /**
+     * Get all message IDs with their payload sizes from the database, ordered by ID.
+     * This avoids reading full payload blobs — only the size metadata is retrieved.
+     *
+     * @return ordered list of (messageId, payloadSizeInBytes) pairs
+     * @throws SQLException if statement failed to execute, or when unable to read results
+     */
+    public synchronized List<long[]> getAllMessageIdsWithPayloadSize() throws SQLException {
+        try (ResultSet rs = getAllMessageIdsWithPayloadSize.execute()) {
+            return getAllMessageIdsWithPayloadSize.mapResult(rs);
+        }
+    }
+
+    /**
      * Get a single message by id from the database.
      *
      * @param id message id
@@ -249,6 +279,53 @@ public class DiskSpoolDAO {
                 ids.add(rs.getLong("message_id"));
             }
             return ids;
+        }
+    }
+
+    class GetMaxMessageId extends CachedStatement<PreparedStatement, ResultSet> {
+        private static final String QUERY = "SELECT MAX(message_id) AS max_id FROM spooler;";
+
+        @Override
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
+        }
+
+        @Override
+        protected ResultSet doExecute(PreparedStatement statement) throws SQLException {
+            return statement.executeQuery();
+        }
+
+        long mapResult(ResultSet rs) throws SQLException {
+            if (!rs.next()) {
+                return -1;
+            }
+            long maxId = rs.getLong("max_id");
+            return rs.wasNull() ? -1 : maxId;
+        }
+    }
+
+    class GetAllMessageIdsWithPayloadSize extends CachedStatement<PreparedStatement, ResultSet> {
+        private static final String QUERY =
+                "SELECT message_id, LENGTH(payload) AS payload_size FROM spooler ORDER BY message_id ASC;";
+
+        @Override
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
+        }
+
+        @Override
+        protected ResultSet doExecute(PreparedStatement statement) throws SQLException {
+            return statement.executeQuery();
+        }
+
+        List<long[]> mapResult(ResultSet rs) throws SQLException {
+            List<long[]> results = new ArrayList<>();
+            while (rs.next()) {
+                long id = rs.getLong("message_id");
+                long size = rs.getLong("payload_size");
+                results.add(new long[]{id, size});
+            }
+            return results;
         }
     }
 

@@ -164,6 +164,105 @@ class DiskSpoolDAOTest {
         }
     }
 
+    @Test
+    void GIVEN_empty_spooler_WHEN_get_max_message_id_THEN_returns_negative_one() throws SQLException {
+        assertEquals(-1, dao.getMaxMessageId());
+    }
+
+    @Test
+    void GIVEN_multiple_messages_WHEN_get_max_message_id_THEN_returns_highest() throws SQLException {
+        // Insert in non-sequential order
+        for (long id : new long[]{5L, 100L, 3L}) {
+            dao.insertSpoolMessage(SpoolMessage.builder()
+                    .id(id)
+                    .request(Publish.builder()
+                            .topic("test")
+                            .payload("msg".getBytes(StandardCharsets.UTF_8))
+                            .qos(QOS.AT_LEAST_ONCE)
+                            .build())
+                    .build());
+        }
+        assertEquals(100L, dao.getMaxMessageId());
+    }
+
+    @Test
+    void GIVEN_messages_WHEN_highest_removed_THEN_max_id_reflects_new_highest() throws SQLException {
+        for (long id : new long[]{10L, 20L, 30L}) {
+            dao.insertSpoolMessage(SpoolMessage.builder()
+                    .id(id)
+                    .request(Publish.builder()
+                            .topic("test")
+                            .payload("msg".getBytes(StandardCharsets.UTF_8))
+                            .qos(QOS.AT_LEAST_ONCE)
+                            .build())
+                    .build());
+        }
+        assertEquals(30L, dao.getMaxMessageId());
+
+        dao.removeSpoolMessageById(30L);
+        assertEquals(20L, dao.getMaxMessageId());
+    }
+
+    @Test
+    void GIVEN_empty_spooler_WHEN_get_all_ids_with_sizes_THEN_returns_empty_list() throws SQLException {
+        List<long[]> result = dao.getAllMessageIdsWithPayloadSize();
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void GIVEN_messages_inserted_in_random_order_WHEN_get_all_ids_with_sizes_THEN_returns_ordered_with_correct_sizes() throws SQLException {
+        byte[] payload5 = "hello".getBytes(StandardCharsets.UTF_8);   // 5 bytes
+        byte[] payload11 = "hello world".getBytes(StandardCharsets.UTF_8); // 11 bytes
+        byte[] payload3 = "abc".getBytes(StandardCharsets.UTF_8);     // 3 bytes
+
+        // Insert in non-sequential order
+        dao.insertSpoolMessage(SpoolMessage.builder().id(50L)
+                .request(Publish.builder().topic("t").payload(payload11).qos(QOS.AT_LEAST_ONCE).build()).build());
+        dao.insertSpoolMessage(SpoolMessage.builder().id(10L)
+                .request(Publish.builder().topic("t").payload(payload5).qos(QOS.AT_LEAST_ONCE).build()).build());
+        dao.insertSpoolMessage(SpoolMessage.builder().id(30L)
+                .request(Publish.builder().topic("t").payload(payload3).qos(QOS.AT_LEAST_ONCE).build()).build());
+
+        List<long[]> result = dao.getAllMessageIdsWithPayloadSize();
+
+        assertEquals(3, result.size());
+        // Should be ordered by message_id ASC
+        assertEquals(10L, result.get(0)[0]);
+        assertEquals(5L, result.get(0)[1]);
+        assertEquals(30L, result.get(1)[0]);
+        assertEquals(3L, result.get(1)[1]);
+        assertEquals(50L, result.get(2)[0]);
+        assertEquals(11L, result.get(2)[1]);
+    }
+
+    @Test
+    void GIVEN_message_with_null_payload_WHEN_get_all_ids_with_sizes_THEN_returns_zero_size() throws SQLException {
+        dao.insertSpoolMessage(SpoolMessage.builder().id(1L)
+                .request(Publish.builder().topic("t").payload(null).qos(QOS.AT_LEAST_ONCE).build()).build());
+
+        List<long[]> result = dao.getAllMessageIdsWithPayloadSize();
+
+        assertEquals(1, result.size());
+        assertEquals(1L, result.get(0)[0]);
+        assertEquals(0L, result.get(0)[1]);
+    }
+
+    @Test
+    void GIVEN_messages_WHEN_one_removed_THEN_ids_with_sizes_reflects_current_state() throws SQLException {
+        byte[] payload = "test".getBytes(StandardCharsets.UTF_8); // 4 bytes
+        for (long id : new long[]{1L, 2L, 3L}) {
+            dao.insertSpoolMessage(SpoolMessage.builder().id(id)
+                    .request(Publish.builder().topic("t").payload(payload).qos(QOS.AT_LEAST_ONCE).build()).build());
+        }
+
+        dao.removeSpoolMessageById(2L);
+
+        List<long[]> result = dao.getAllMessageIdsWithPayloadSize();
+        assertEquals(2, result.size());
+        assertEquals(1L, result.get(0)[0]);
+        assertEquals(3L, result.get(1)[0]);
+    }
+
     @ParameterizedTest
     @MethodSource("allSpoolerOperations")
     void GIVEN_spooler_WHEN_corruption_detected_during_operation_THEN_spooler_recovers(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation) throws SQLException {
