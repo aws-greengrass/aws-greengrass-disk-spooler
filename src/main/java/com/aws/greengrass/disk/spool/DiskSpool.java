@@ -12,9 +12,11 @@ import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.LogManager;
 import com.aws.greengrass.mqttclient.spool.CloudMessageSpool;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
+import com.aws.greengrass.mqttclient.spool.SpoolMessageMetadata;
 
 import java.io.IOException;
 import java.sql.SQLException;
+import java.util.List;
 import javax.inject.Inject;
 
 @ImplementsService(name = DiskSpool.PERSISTENCE_SERVICE_NAME, autostart = true)
@@ -86,6 +88,15 @@ public class DiskSpool extends PluginService implements CloudMessageSpool {
     public Iterable<Long> getAllMessageIds() throws IOException {
         try {
             return dao.getAllSpoolMessageIds();
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
+    }
+
+    @Override
+    public List<SpoolMessageMetadata> getAllMessageMetadata() throws IOException {
+        try {
+            return dao.getAllSpoolMessageMetadata();
         } catch (SQLException e) {
             throw new IOException(e);
         }

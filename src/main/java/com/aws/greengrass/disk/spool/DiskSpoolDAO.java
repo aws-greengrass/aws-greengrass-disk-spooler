@@ -8,6 +8,7 @@ package com.aws.greengrass.disk.spool;
 import com.aws.greengrass.logging.api.Logger;
 import com.aws.greengrass.logging.impl.LogManager;
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
+import com.aws.greengrass.mqttclient.spool.SpoolMessageMetadata;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.mqttclient.v5.UserProperty;
@@ -60,12 +61,14 @@ public class DiskSpoolDAO {
     private final String url;
     private final CreateSpoolerTable createSpoolerTable = new CreateSpoolerTable();
     private final GetAllSpoolMessageIds getAllSpoolMessageIds = new GetAllSpoolMessageIds();
+    private final GetAllSpoolMessageMetadata getAllSpoolMessageMetadata = new GetAllSpoolMessageMetadata();
     private final GetSpoolMessageById getSpoolMessageById = new GetSpoolMessageById();
     private final InsertSpoolMessage insertSpoolMessage = new InsertSpoolMessage();
     private final RemoveSpoolMessageById removeSpoolMessageById = new RemoveSpoolMessageById();
     private final List<CachedStatement<?,?>> allStatements = Arrays.asList(
             createSpoolerTable,
             getAllSpoolMessageIds,
+            getAllSpoolMessageMetadata,
             getSpoolMessageById,
             insertSpoolMessage,
             removeSpoolMessageById
@@ -164,6 +167,18 @@ public class DiskSpoolDAO {
     }
 
     /**
+     * Get the id, payload size and QoS of all messages from the database, without reading payloads.
+     *
+     * @return message metadata ordered by id ascending
+     * @throws SQLException if statement failed to execute, or when unable to read results
+     */
+    public synchronized List<SpoolMessageMetadata> getAllSpoolMessageMetadata() throws SQLException {
+        try (ResultSet rs = getAllSpoolMessageMetadata.execute()) {
+            return getAllSpoolMessageMetadata.mapResultToMetadata(rs);
+        }
+    }
+
+    /**
      * Get a single message by id from the database.
      *
      * @param id message id
@@ -231,7 +246,7 @@ public class DiskSpoolDAO {
     }
 
     class GetAllSpoolMessageIds extends CachedStatement<PreparedStatement, ResultSet> {
-        private static final String QUERY = "SELECT message_id FROM spooler;";
+        private static final String QUERY = "SELECT message_id FROM spooler ORDER BY message_id ASC;";
 
         @Override
         protected PreparedStatement createStatement(Connection connection) throws SQLException {
@@ -249,6 +264,32 @@ public class DiskSpoolDAO {
                 ids.add(rs.getLong("message_id"));
             }
             return ids;
+        }
+    }
+
+    class GetAllSpoolMessageMetadata extends CachedStatement<PreparedStatement, ResultSet> {
+        // LENGTH() of a BLOB is read from the record header, so overflow pages of large payloads are not loaded
+        private static final String QUERY =
+                "SELECT message_id, qos, LENGTH(payload) AS payload_size FROM spooler ORDER BY message_id ASC;";
+
+        @Override
+        protected PreparedStatement createStatement(Connection connection) throws SQLException {
+            return connection.prepareStatement(QUERY);
+        }
+
+        @Override
+        protected ResultSet doExecute(PreparedStatement statement) throws SQLException {
+            return statement.executeQuery();
+        }
+
+        List<SpoolMessageMetadata> mapResultToMetadata(ResultSet rs) throws SQLException {
+            List<SpoolMessageMetadata> results = new ArrayList<>();
+            while (rs.next()) {
+                long id = rs.getLong("message_id");
+                // unknown QoS is treated by the nucleus as possibly QoS 0
+                results.add(new SpoolMessageMetadata(id, rs.getLong("payload_size"), toQos(id, rs.getInt("qos"))));
+            }
+            return results;
         }
     }
 
@@ -279,8 +320,12 @@ public class DiskSpoolDAO {
             if (!rs.next()) {
                 return null;
             }
+            QOS qos = toQos(id, rs.getInt("qos"));
+            if (qos == null) {
+                throw new SQLException("Unknown QoS for spooled message " + id);
+            }
             Publish request = Publish.builder()
-                    .qos(QOS.fromInt(rs.getInt("qos")))
+                    .qos(qos)
                     .retain(rs.getBoolean("retain"))
                     .topic(rs.getString("topic"))
                     .payload(rs.getBytes("payload"))
@@ -414,6 +459,22 @@ public class DiskSpoolDAO {
         @Override
         protected Integer doExecute(PreparedStatement statement) throws SQLException {
             return statement.executeUpdate();
+        }
+    }
+
+    /**
+     * Convert a persisted QoS value, logging and returning null if it is unknown.
+     *
+     * @param messageId id of the message the QoS belongs to
+     * @param qos       persisted QoS value
+     * @return QoS, or null if unknown
+     */
+    private static QOS toQos(long messageId, int qos) {
+        try {
+            return QOS.fromInt(qos);
+        } catch (IllegalArgumentException e) {
+            LOGGER.atWarn().kv("messageId", messageId).kv("qos", qos).cause(e).log("Unknown QoS for spooled message");
+            return null;
         }
     }
 
