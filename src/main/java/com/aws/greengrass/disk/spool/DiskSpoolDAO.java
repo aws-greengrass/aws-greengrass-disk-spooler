@@ -246,7 +246,7 @@ public class DiskSpoolDAO {
     }
 
     class GetAllSpoolMessageIds extends CachedStatement<PreparedStatement, ResultSet> {
-        private static final String QUERY = "SELECT message_id FROM spooler;";
+        private static final String QUERY = "SELECT message_id FROM spooler ORDER BY message_id ASC;";
 
         @Override
         protected PreparedStatement createStatement(Connection connection) throws SQLException {
@@ -285,19 +285,11 @@ public class DiskSpoolDAO {
         List<SpoolMessageMetadata> mapResultToMetadata(ResultSet rs) throws SQLException {
             List<SpoolMessageMetadata> results = new ArrayList<>();
             while (rs.next()) {
-                results.add(new SpoolMessageMetadata(rs.getLong("message_id"), rs.getLong("payload_size"),
-                        toQos(rs.getInt("qos"))));
+                long id = rs.getLong("message_id");
+                // unknown QoS is treated by the nucleus as possibly QoS 0
+                results.add(new SpoolMessageMetadata(id, rs.getLong("payload_size"), toQos(id, rs.getInt("qos"))));
             }
             return results;
-        }
-
-        private QOS toQos(int qos) {
-            try {
-                return QOS.fromInt(qos);
-            } catch (IllegalArgumentException e) {
-                // unknown QoS is treated by the nucleus as possibly QoS 0
-                return null;
-            }
         }
     }
 
@@ -328,8 +320,12 @@ public class DiskSpoolDAO {
             if (!rs.next()) {
                 return null;
             }
+            QOS qos = toQos(id, rs.getInt("qos"));
+            if (qos == null) {
+                throw new SQLException("Unknown QoS for spooled message " + id);
+            }
             Publish request = Publish.builder()
-                    .qos(QOS.fromInt(rs.getInt("qos")))
+                    .qos(qos)
                     .retain(rs.getBoolean("retain"))
                     .topic(rs.getString("topic"))
                     .payload(rs.getBytes("payload"))
@@ -463,6 +459,22 @@ public class DiskSpoolDAO {
         @Override
         protected Integer doExecute(PreparedStatement statement) throws SQLException {
             return statement.executeUpdate();
+        }
+    }
+
+    /**
+     * Convert a persisted QoS value, logging and returning null if it is unknown.
+     *
+     * @param messageId id of the message the QoS belongs to
+     * @param qos       persisted QoS value
+     * @return QoS, or null if unknown
+     */
+    private static QOS toQos(long messageId, int qos) {
+        try {
+            return QOS.fromInt(qos);
+        } catch (IllegalArgumentException e) {
+            LOGGER.atWarn().kv("messageId", messageId).kv("qos", qos).cause(e).log("Unknown QoS for spooled message");
+            return null;
         }
     }
 

@@ -26,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.sql.SQLTransientException;
+import java.sql.Statement;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
@@ -213,6 +214,33 @@ class DiskSpoolDAOTest {
         assertEquals(2, result.size());
         assertEquals(1L, result.get(0).getId());
         assertEquals(3L, result.get(1).getId());
+    }
+
+    @Test
+    void GIVEN_message_with_unknown_qos_WHEN_get_all_message_metadata_THEN_qos_is_null(ExtensionContext context)
+            throws SQLException {
+        ignoreExceptionOfType(context, IllegalArgumentException.class);
+        insertMessage(1L, "test".getBytes(StandardCharsets.UTF_8), QOS.AT_LEAST_ONCE);
+        setPersistedQos(1L, 7);
+
+        assertEquals(Collections.singletonList(new SpoolMessageMetadata(1L, 4L, null)),
+                dao.getAllSpoolMessageMetadata());
+    }
+
+    @Test
+    void GIVEN_message_with_unknown_qos_WHEN_get_message_by_id_THEN_sql_exception_thrown(ExtensionContext context)
+            throws SQLException {
+        ignoreExceptionOfType(context, IllegalArgumentException.class);
+        insertMessage(1L, "test".getBytes(StandardCharsets.UTF_8), QOS.AT_LEAST_ONCE);
+        setPersistedQos(1L, 7);
+
+        assertThrows(SQLException.class, () -> dao.getSpoolMessageById(1L));
+    }
+
+    private void setPersistedQos(long id, int qos) throws SQLException {
+        try (Statement statement = dao.getConnection().createStatement()) {
+            statement.executeUpdate("UPDATE spooler SET qos = " + qos + " WHERE message_id = " + id + ";");
+        }
     }
 
     private void insertMessage(long id, byte[] payload, QOS qos) throws SQLException {
