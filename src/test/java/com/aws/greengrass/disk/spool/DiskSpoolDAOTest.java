@@ -6,6 +6,7 @@
 package com.aws.greengrass.disk.spool;
 
 import com.aws.greengrass.mqttclient.spool.SpoolMessage;
+import com.aws.greengrass.mqttclient.spool.SpoolMessageMetadata;
 import com.aws.greengrass.mqttclient.v5.Publish;
 import com.aws.greengrass.mqttclient.v5.QOS;
 import com.aws.greengrass.testcommons.testutilities.GGExtension;
@@ -25,6 +26,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.sql.SQLTransientException;
+import java.sql.Statement;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -62,6 +66,11 @@ class DiskSpoolDAOTest {
 
     private static final CrashableFunction<DiskSpoolDAO, Void, Exception> OPERATION_GET_ALL_SPOOL_MESSAGE_IDS = dao -> {
         dao.getAllSpoolMessageIds();
+        return null;
+    };
+
+    private static final CrashableFunction<DiskSpoolDAO, Void, Exception> OPERATION_GET_ALL_SPOOL_MESSAGE_METADATA = dao -> {
+        dao.getAllSpoolMessageMetadata();
         return null;
     };
 
@@ -164,6 +173,81 @@ class DiskSpoolDAOTest {
         }
     }
 
+    @Test
+    void GIVEN_empty_spooler_WHEN_get_all_message_metadata_THEN_returns_empty_list() throws SQLException {
+        assertTrue(dao.getAllSpoolMessageMetadata().isEmpty());
+    }
+
+    @Test
+    void GIVEN_messages_inserted_in_random_order_WHEN_get_all_message_metadata_THEN_returns_ordered_metadata()
+            throws SQLException {
+        insertMessage(50L, "hello world".getBytes(StandardCharsets.UTF_8), QOS.AT_LEAST_ONCE);
+        insertMessage(10L, "hello".getBytes(StandardCharsets.UTF_8), QOS.AT_MOST_ONCE);
+        insertMessage(30L, "abc".getBytes(StandardCharsets.UTF_8), QOS.EXACTLY_ONCE);
+
+        List<SpoolMessageMetadata> result = dao.getAllSpoolMessageMetadata();
+
+        assertEquals(Arrays.asList(
+                new SpoolMessageMetadata(10L, 5L, QOS.AT_MOST_ONCE),
+                new SpoolMessageMetadata(30L, 3L, QOS.EXACTLY_ONCE),
+                new SpoolMessageMetadata(50L, 11L, QOS.AT_LEAST_ONCE)), result);
+    }
+
+    @Test
+    void GIVEN_message_with_null_payload_WHEN_get_all_message_metadata_THEN_returns_zero_size() throws SQLException {
+        insertMessage(1L, null, QOS.AT_LEAST_ONCE);
+
+        assertEquals(Collections.singletonList(new SpoolMessageMetadata(1L, 0L, QOS.AT_LEAST_ONCE)),
+                dao.getAllSpoolMessageMetadata());
+    }
+
+    @Test
+    void GIVEN_messages_WHEN_one_removed_THEN_metadata_reflects_current_state() throws SQLException {
+        byte[] payload = "test".getBytes(StandardCharsets.UTF_8);
+        for (long id : new long[]{1L, 2L, 3L}) {
+            insertMessage(id, payload, QOS.AT_LEAST_ONCE);
+        }
+
+        dao.removeSpoolMessageById(2L);
+
+        List<SpoolMessageMetadata> result = dao.getAllSpoolMessageMetadata();
+        assertEquals(2, result.size());
+        assertEquals(1L, result.get(0).getId());
+        assertEquals(3L, result.get(1).getId());
+    }
+
+    @Test
+    void GIVEN_message_with_unknown_qos_WHEN_get_all_message_metadata_THEN_qos_is_null(ExtensionContext context)
+            throws SQLException {
+        ignoreExceptionOfType(context, IllegalArgumentException.class);
+        insertMessage(1L, "test".getBytes(StandardCharsets.UTF_8), QOS.AT_LEAST_ONCE);
+        setPersistedQos(1L, 7);
+
+        assertEquals(Collections.singletonList(new SpoolMessageMetadata(1L, 4L, null)),
+                dao.getAllSpoolMessageMetadata());
+    }
+
+    @Test
+    void GIVEN_message_with_unknown_qos_WHEN_get_message_by_id_THEN_sql_exception_thrown(ExtensionContext context)
+            throws SQLException {
+        ignoreExceptionOfType(context, IllegalArgumentException.class);
+        insertMessage(1L, "test".getBytes(StandardCharsets.UTF_8), QOS.AT_LEAST_ONCE);
+        setPersistedQos(1L, 7);
+
+        assertThrows(SQLException.class, () -> dao.getSpoolMessageById(1L));
+    }
+
+    private void setPersistedQos(long id, int qos) throws SQLException {
+        try (Statement statement = dao.getConnection().createStatement()) {
+            statement.executeUpdate("UPDATE spooler SET qos = " + qos + " WHERE message_id = " + id + ";");
+        }
+    }
+
+    private void insertMessage(long id, byte[] payload, QOS qos) throws SQLException {
+        dao.insertSpoolMessage(SpoolMessage.builder().id(id)
+                .request(Publish.builder().topic("t").payload(payload).qos(qos).build()).build());
+    }
+
     @ParameterizedTest
     @MethodSource("allSpoolerOperations")
     void GIVEN_spooler_WHEN_corruption_detected_during_operation_THEN_spooler_recovers(CrashableFunction<DiskSpoolDAO, Void, SQLException> operation) throws SQLException {
@@ -187,6 +271,7 @@ class DiskSpoolDAOTest {
         return Stream.of(
                 Arguments.of(OPERATION_INSERT_SPOOL_MESSAGE),
                 Arguments.of(OPERATION_GET_ALL_SPOOL_MESSAGE_IDS),
+                Arguments.of(OPERATION_GET_ALL_SPOOL_MESSAGE_METADATA),
                 Arguments.of(OPERATION_GET_SPOOL_MESSAGE_BY_ID),
                 Arguments.of(OPERATION_REMOVE_SPOOL_MESSAGE_BY_ID)
         );
